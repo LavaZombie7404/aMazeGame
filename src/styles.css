@@ -1,0 +1,133 @@
+:root {
+  --paper: #f7f3e8;
+  --paper-line: #b9c7d8;
+  --paper-margin: #e9a3a6;
+  --ink: #1d2433;
+  --ink-soft: #2a3450;
+  --dot: #c83b3b;
+  --accent: #2f6fb8;
+  --hud-bg: rgba(247, 243, 232, 0.85);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Patrick Hand", "Comic Sans MS", "Bradley Hand", system-ui,
+    sans-serif;
+  font-size: 18px;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: var(--hud-bg);
+  border-bottom: 1px dashed var(--ink-soft);
+  font-size: 1.05rem;
+}
+
+.hud-label {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.hud-value {
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.hud-right {
+  text-align: right;
+}
+
+#stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+#maze {
+  display: block;
+  touch-action: none;
+  background: transparent;
+}
+
+.hint {
+  text-align: center;
+  padding: 0.5rem;
+  font-size: 0.95rem;
+  opacity: 0.6;
+  border-top: 1px dashed var(--ink-soft);
+}
+
+dialog#name-dialog {
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 1.5rem;
+  font-family: inherit;
+  color: var(--ink);
+  max-width: 90vw;
+}
+
+dialog#name-dialog::backdrop {
+  background: rgba(29, 36, 51, 0.4);
+}
+
+dialog#name-dialog h2 {
+  margin: 0 0 1rem;
+  font-size: 1.3rem;
+}
+
+dialog#name-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+dialog#name-dialog input {
+  font: inherit;
+  padding: 0.6rem 0.8rem;
+  border: 1.5px solid var(--ink-soft);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+dialog#name-dialog button {
+  font: inherit;
+  padding: 0.6rem 1rem;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
