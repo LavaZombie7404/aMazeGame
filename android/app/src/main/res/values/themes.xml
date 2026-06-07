@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Minimal app theme; visible theming is handled by MaterialTheme inside
+         Compose. The Activity needs *some* parent theme to satisfy AAPT. -->
+    <style name="Theme.aMazeGame" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

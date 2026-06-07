@@ -16,12 +16,19 @@ android {
         versionName = "0.1.0"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            // arm64-v8a covers every modern Android device. Add armeabi-v7a
+            // and x86_64 back once the WAMR build is validated on those
+            // targets too (its cmake needs a bit of love per arch).
+            abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
             cmake {
                 arguments += listOf("-DANDROID_STL=c++_shared")
                 cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
+                // Only build our library — skip WAMR's downstream "all" target
+                // (the iwasm_shared link is intentionally disabled in
+                // CMakeLists.txt; this stops Gradle from asking for it).
+                targets += "amaze_native"
             }
         }
     }

@@ -26,6 +26,9 @@ android/captures/
 android/.cxx/
 android/app/.cxx/
 
+# Staged by the stageCoreWasm Gradle task on every build.
+android/app/src/main/assets/core.wasm
+
 # Playwright artifacts — keep the repo clean.
 test-results/
 playwright-report/
