@@ -63,7 +63,7 @@ Where to put what:
 - Architecture, module-shape, or rendering patterns → `docs/architecture.md`
 - PRD-level facts → `docs/requirements.md`
 - Cross-cutting meta-rules + a one-line index of the lessons themselves → here, below.
-- Persistent user/project context across sessions → the memory system in `~/.claude/projects/-home-lavazombie-aMazeGame/memory/`.
+- Persistent user/project context across sessions → the memory system Claude Code maintains at `~/.claude/projects/<slug>/memory/` (the slug is derived from the absolute path of this checkout).
 
 ### Lesson log (one-liners, link out for detail)
 
