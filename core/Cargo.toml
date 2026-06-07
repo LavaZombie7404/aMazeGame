@@ -1,0 +1,13 @@
+[package]
+name = "amaze-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Shared game core for aMazeGame — generates mazes, steps the autonomous walker, hashes maze structure. Compiled to a single .wasm consumed by both the web (Vite) and the native Android app (via WAMR)."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sha2 = { version = "0.10", default-features = false }

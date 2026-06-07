@@ -29,6 +29,14 @@ import {
 import { mulberry32, randomSeed } from "./rng";
 import { DEFAULT_SKIN_ID, getSkin, listSkins, type Skin } from "./skins";
 import { listShapes } from "./shapes";
+import { loadCore } from "./core/wasm";
+
+// Validation tap: confirm the shared Rust WASM core is loadable. The TS
+// gameplay path still runs from `./maze` and `./movement` — the WASM core is
+// the eventual replacement (and is what the Android app consumes today).
+void loadCore()
+  .then((x) => console.info("amaze-core WASM loaded, ABI v" + x.core_abi_version()))
+  .catch((e) => console.warn("amaze-core WASM not loaded:", e));
 
 const canvas = document.getElementById("maze") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;

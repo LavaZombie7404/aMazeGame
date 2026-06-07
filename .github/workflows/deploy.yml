@@ -25,6 +25,17 @@ jobs:
           node-version: "24"
           cache: "npm"
 
+      # `npm run build` builds the Rust core (core/) → wasm32-unknown-unknown
+      # before the Vite build, so the runner needs a Rust toolchain with that
+      # target.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
       - name: Install
         run: npm ci
 

@@ -1,0 +1,142 @@
+use crate::maze::{cell_index, has_wall, Maze};
+use std::collections::BTreeSet;
+
+// Direction constants are exposed for clarity; the actual wall masks use
+// these bit positions.
+#[allow(dead_code)]
+pub mod dir {
+    pub const N: u8 = 0;
+    pub const E: u8 = 1;
+    pub const S: u8 = 2;
+    pub const W: u8 = 3;
+}
+
+const VEC: [(i32, i32); 4] = [(0, -1), (1, 0), (0, 1), (-1, 0)];
+
+/// Cells per second. Match `SPEED` in `web/src/movement.ts`.
+pub const SPEED: f32 = 7.0;
+
+/// Mirror of the TS `MovementState`. Fractional `render_*` so the WASM consumer
+/// (web canvas or native Compose Canvas) can interpolate between cells.
+pub struct MovementState {
+    pub cell_x: u32,
+    pub cell_y: u32,
+    pub render_x: f32,
+    pub render_y: f32,
+    pub dir: i32,        // -1 = idle
+    pub queued_dir: i32, // -1 = none
+    pub progress: f32,
+    pub visited: BTreeSet<u32>, // cell indices
+}
+
+impl MovementState {
+    pub fn new(maze: &Maze) -> Self {
+        let mut visited = BTreeSet::new();
+        visited.insert(cell_index(maze.size, maze.start.0, maze.start.1) as u32);
+        Self {
+            cell_x: maze.start.0,
+            cell_y: maze.start.1,
+            render_x: maze.start.0 as f32,
+            render_y: maze.start.1 as f32,
+            dir: -1,
+            queued_dir: -1,
+            progress: 0.0,
+            visited,
+        }
+    }
+}
+
+pub fn can_move(maze: &Maze, x: u32, y: u32, dir: u8) -> bool {
+    !has_wall(&maze.walls, maze.size, x, y, dir)
+}
+
+/// Decision cell = junction, dead-end, goal, or anywhere the player can't
+/// keep going straight. Same logic as `web/src/movement.ts::isDecisionCell`.
+pub fn is_decision_cell(maze: &Maze, x: u32, y: u32, incoming_dir: i32) -> bool {
+    if x == maze.goal.0 && y == maze.goal.1 {
+        return true;
+    }
+    let back = if incoming_dir < 0 {
+        -1
+    } else {
+        (incoming_dir + 2) % 4
+    };
+    let mut exits = Vec::with_capacity(4);
+    for d in 0..4i32 {
+        if d == back {
+            continue;
+        }
+        if can_move(maze, x, y, d as u8) {
+            exits.push(d);
+        }
+    }
+    if exits.is_empty() {
+        return true;
+    }
+    !(exits.len() == 1 && incoming_dir >= 0 && exits[0] == incoming_dir)
+}
+
+pub struct StepResult {
+    pub reached_goal: bool,
+}
+
+pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
+    if s.dir < 0 {
+        if s.queued_dir >= 0 && can_move(maze, s.cell_x, s.cell_y, s.queued_dir as u8) {
+            s.dir = s.queued_dir;
+            s.queued_dir = -1;
+        } else {
+            return StepResult { reached_goal: false };
+        }
+    }
+
+    s.progress += dt * SPEED;
+
+    while s.progress >= 1.0 {
+        s.progress -= 1.0;
+        let (vx, vy) = VEC[s.dir as usize];
+        s.cell_x = (s.cell_x as i32 + vx) as u32;
+        s.cell_y = (s.cell_y as i32 + vy) as u32;
+        s.render_x = s.cell_x as f32;
+        s.render_y = s.cell_y as f32;
+        s.visited
+            .insert(cell_index(maze.size, s.cell_x, s.cell_y) as u32);
+
+        if s.cell_x == maze.goal.0 && s.cell_y == maze.goal.1 {
+            s.dir = -1;
+            s.queued_dir = -1;
+            s.progress = 0.0;
+            return StepResult { reached_goal: true };
+        }
+
+        if is_decision_cell(maze, s.cell_x, s.cell_y, s.dir) {
+            if s.queued_dir >= 0
+                && can_move(maze, s.cell_x, s.cell_y, s.queued_dir as u8)
+            {
+                s.dir = s.queued_dir;
+                s.queued_dir = -1;
+            } else {
+                s.dir = -1;
+                s.progress = 0.0;
+                return StepResult { reached_goal: false };
+            }
+        }
+    }
+
+    if s.dir >= 0 {
+        let (vx, vy) = VEC[s.dir as usize];
+        s.render_x = s.cell_x as f32 + vx as f32 * s.progress;
+        s.render_y = s.cell_y as f32 + vy as f32 * s.progress;
+    }
+    StepResult { reached_goal: false }
+}
+
+pub fn queue_direction(maze: &Maze, s: &mut MovementState, dir: u8) {
+    if s.dir < 0 && can_move(maze, s.cell_x, s.cell_y, dir) {
+        s.dir = dir as i32;
+        s.queued_dir = -1;
+        s.progress = 0.0;
+        return;
+    }
+    s.queued_dir = dir as i32;
+}

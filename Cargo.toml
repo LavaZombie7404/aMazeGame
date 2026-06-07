@@ -1,0 +1,18 @@
+[workspace]
+members = ["core"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["LavaZombie7404"]
+
+[profile.release]
+# WASM payload should be lean — strip symbols, abort on panic (no unwind
+# tables), maximal optimisation.
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
