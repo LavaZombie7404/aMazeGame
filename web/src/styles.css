@@ -69,7 +69,13 @@ body {
   text-align: right;
 }
 
-#settings-btn {
+.hud-center {
+  display: flex;
+  gap: 0.5rem;
+}
+
+#settings-btn,
+#reset-btn {
   font: inherit;
   font-size: 1.4rem;
   line-height: 1;
@@ -85,7 +91,8 @@ body {
   padding: 0;
 }
 
-#settings-btn:active {
+#settings-btn:active,
+#reset-btn:active {
   transform: scale(0.95);
 }
 

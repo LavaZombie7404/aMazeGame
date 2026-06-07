@@ -26,14 +26,28 @@ export interface RenderState {
   visited: ReadonlySet<number>;
 }
 
+/**
+ * Maximum number of cells along the smallest screen axis. The cell size is
+ * derived from this — it's the math-notebook square size, shared by the maze
+ * and the visible grid (PRD §6.0). This is the visual budget; mazes smaller
+ * than MAX_CELLS_ON_SCREEN render with the same square size and just get
+ * letter-boxed by the renderer.
+ */
+export const MAX_CELLS_ON_SCREEN = 17;
+
 export function fitMetrics(
   canvas: HTMLCanvasElement,
   size: number,
 ): ViewMetrics {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const rect = canvas.getBoundingClientRect();
-  const usable = Math.min(rect.width, rect.height) - 16;
-  const cell = Math.floor(usable / size);
+  // Cell size is the same regardless of maze N: it's screen_min / 17.
+  // Small mazes get a smaller board inside a bigger canvas; the grid behind
+  // is drawn across the full canvas so the player still sees notebook paper.
+  const cell = Math.max(
+    8,
+    Math.floor((Math.min(rect.width, rect.height) - 16) / MAX_CELLS_ON_SCREEN),
+  );
   const board = cell * size;
   const offsetX = (rect.width - board) / 2;
   const offsetY = (rect.height - board) / 2;

@@ -35,6 +35,7 @@ const ctx = canvas.getContext("2d")!;
 const scoreEl = document.getElementById("score")!;
 const nameEl = document.getElementById("player-name")!;
 const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
+const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
 const nameDialog = document.getElementById("name-dialog") as HTMLDialogElement;
 const nameInput = document.getElementById("name-input") as HTMLInputElement;
 const settingsDialog = document.getElementById(
@@ -62,11 +63,18 @@ function bucketFor(mazesCompleted: number): DifficultyBucket {
   return mazesCompleted % 2 === 0 ? "simple" : "complex";
 }
 
+// Maze size bounds are now driven by what fits on screen: at one
+// notebook-square per cell, the short axis fits 17 cells (PRD §6.0). Bigger
+// would force shrinking the cells below the grid, which we explicitly don't
+// want.
+const MIN_SIZE = 12;
+const MAX_SIZE = 17;
+
 function sizeForBucket(bucket: DifficultyBucket, rand: () => number): number {
   if (bucket === "simple") {
-    return 12 + Math.floor(rand() * 7); // 12..18 inclusive
+    return MIN_SIZE + Math.floor(rand() * 3); // 12..14 inclusive
   }
-  return 24 + Math.floor(rand() * 7); // 24..30 inclusive
+  return 15 + Math.floor(rand() * (MAX_SIZE - 15 + 1)); // 15..17 inclusive
 }
 
 async function generateUniqueMaze(bucket: DifficultyBucket): Promise<Maze> {
@@ -257,6 +265,13 @@ async function boot() {
       if (!maze || !movement) return;
       queueDirection(maze, movement, DIR_FROM_NAME[d]);
     },
+  });
+
+  resetBtn.addEventListener("click", async () => {
+    // Abandon the current maze and generate a new one. The skipped maze
+    // doesn't count toward the score and won't repeat this session.
+    const p = await getPlayer();
+    if (p) await nextRound(p);
   });
 
   settingsBtn.addEventListener("click", async () => {

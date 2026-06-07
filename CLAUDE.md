@@ -53,3 +53,22 @@ npm run preview    # serve dist/ locally
 ## Memory of the user
 
 The user is a Geometry Dash fan; the planned Phase-2 aesthetic is Geometry Dash style. Don't suggest aesthetic directions that conflict with that long-term plan when the user is talking about polish.
+
+## Logging lessons learned (durable)
+
+Whenever you (or the user) hit a non-obvious bug, gotcha, or workflow that would have saved the previous session 20+ minutes, **write it down** in the doc closest to the topic. Future-Claude lands cold and has to re-learn anything that isn't written.
+
+Where to put what:
+- Platform/debug workflow gotchas → `docs/android-debug.md`
+- Architecture, module-shape, or rendering patterns → `docs/architecture.md`
+- PRD-level facts → `docs/requirements.md`
+- Cross-cutting meta-rules + a one-line index of the lessons themselves → here, below.
+- Persistent user/project context across sessions → the memory system in `~/.claude/projects/-home-lavazombie-aMazeGame/memory/`.
+
+### Lesson log (one-liners, link out for detail)
+
+- **Canvas runaway-growth on the phone** — `#maze` had no CSS width; `fitMetrics` writing the backing-store size leaked back into CSS layout and OOM'd the tab after a few frames. Fix: pin the canvas to `position:absolute; inset:0; width:100%; height:100%`. Reach for this pattern any time something works on desktop Chrome but breaks on the phone. See `docs/android-debug.md` §6.
+- **Phone Chrome DevTools socket isn't bound until there's a foreground tab.** `curl http://localhost:9222/json/version` returns nothing if no tab is open. Open any tab first. See `docs/android-debug.md` §5.
+- **sql.js dev import** — Vite dev served the pre-built browser entry which has no default ESM export. Fix: `optimizeDeps.include: ["sql.js"]` (not `exclude`). Commit `ced3fee`.
+- **USB phone-not-detected diagnosis** — when `usbipd list` shows nothing new on plug-in (or shows "Port Reset Failed"), Windows can't see the data lines. Cable is the #1 cause; second is dirty USB port on the phone. Use the polling loop in `docs/android-debug.md` §6 to bisect cable vs port without trial-and-error.
+- **Default debug technique on the phone** = `scripts/inspect-phone.mjs` (connect over CDP, capture all console + pageerror + request failures, dump runtime state in one shot). Use it first when behavior differs across platforms.

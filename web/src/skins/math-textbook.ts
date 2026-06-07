@@ -20,17 +20,20 @@ function drawPaper(ctx: CanvasRenderingContext2D, m: SkinMetrics) {
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, m.width, m.height);
 
-  // Square grid — same spacing on both axes so the squares are square.
-  const spacing = 22;
+  // Grid spacing == m.cell so each notebook square IS one maze cell. The
+  // grid is anchored to the maze top-left so wall edges land exactly on grid
+  // lines (the pen-stroke walls overdraw the lines underneath).
   ctx.strokeStyle = PAPER_LINE;
   ctx.lineWidth = 1;
   ctx.globalAlpha = 0.5;
   ctx.beginPath();
-  for (let x = spacing; x < m.width; x += spacing) {
+  const offX = ((m.offsetX % m.cell) + m.cell) % m.cell;
+  const offY = ((m.offsetY % m.cell) + m.cell) % m.cell;
+  for (let x = offX; x < m.width; x += m.cell) {
     ctx.moveTo(x + 0.5, 0);
     ctx.lineTo(x + 0.5, m.height);
   }
-  for (let y = spacing; y < m.height; y += spacing) {
+  for (let y = offY; y < m.height; y += m.cell) {
     ctx.moveTo(0, y + 0.5);
     ctx.lineTo(m.width, y + 0.5);
   }
