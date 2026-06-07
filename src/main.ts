@@ -1,5 +1,10 @@
 import { generateMaze, hashMaze, type Maze } from "./maze";
-import { fitMetrics, render, type ViewMetrics } from "./renderer";
+import {
+  fitMetrics,
+  render,
+  type ShapeOverrides,
+  type ViewMetrics,
+} from "./renderer";
 import { attachSwipe } from "./input";
 import {
   createMovementState,
@@ -14,33 +19,60 @@ import {
   markGenerated,
   recordCompletion,
   setPlayerName,
+  setShapeOverride,
+  setSkinId,
   wasGeneratedThisSession,
+  type DifficultyBucket,
+  type PlayerRecord,
+  type ShapeSlot,
 } from "./storage";
-import { pickInt, mulberry32, randomSeed } from "./rng";
-
-const MIN_SIZE = 6;
-const MAX_SIZE = 12;
+import { mulberry32, randomSeed } from "./rng";
+import { DEFAULT_SKIN_ID, getSkin, listSkins, type Skin } from "./skins";
+import { listShapes } from "./shapes";
 
 const canvas = document.getElementById("maze") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
 const scoreEl = document.getElementById("score")!;
 const nameEl = document.getElementById("player-name")!;
-const dialog = document.getElementById("name-dialog") as HTMLDialogElement;
+const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
+const nameDialog = document.getElementById("name-dialog") as HTMLDialogElement;
 const nameInput = document.getElementById("name-input") as HTMLInputElement;
+const settingsDialog = document.getElementById(
+  "settings-dialog",
+) as HTMLDialogElement;
+const skinSelect = document.getElementById("skin-select") as HTMLSelectElement;
+const characterShapeSelect = document.getElementById(
+  "character-shape-select",
+) as HTMLSelectElement;
+const startShapeSelect = document.getElementById(
+  "start-shape-select",
+) as HTMLSelectElement;
+const goalShapeSelect = document.getElementById(
+  "goal-shape-select",
+) as HTMLSelectElement;
 
 let maze: Maze;
 let movement: MovementState;
 let metrics: ViewMetrics;
+let skin: Skin;
+let overrides: ShapeOverrides = { character: null, start: null, goal: null };
 
-/**
- * Generate a maze that has never been seen on this device. Picks a fresh seed
- * each time and rejects collisions. With ~10^x state space, collisions are
- * astronomically rare, but we still enforce the invariant.
- */
-async function generateUniqueMaze(): Promise<Maze> {
+/** PRD §6.0 — alternate simple ↔ complex buckets across rounds. */
+function bucketFor(mazesCompleted: number): DifficultyBucket {
+  return mazesCompleted % 2 === 0 ? "simple" : "complex";
+}
+
+function sizeForBucket(bucket: DifficultyBucket, rand: () => number): number {
+  if (bucket === "simple") {
+    return 12 + Math.floor(rand() * 7); // 12..18 inclusive
+  }
+  return 24 + Math.floor(rand() * 7); // 24..30 inclusive
+}
+
+async function generateUniqueMaze(bucket: DifficultyBucket): Promise<Maze> {
   for (let attempt = 0; attempt < 50; attempt++) {
     const sizeRand = mulberry32(randomSeed());
-    const size = pickInt(sizeRand, MIN_SIZE, MAX_SIZE);
+    const size = sizeForBucket(bucket, sizeRand);
     const seed = randomSeed();
     const candidate = generateMaze(size, seed);
     const h = await hashMaze(candidate);
@@ -52,8 +84,9 @@ async function generateUniqueMaze(): Promise<Maze> {
   throw new Error("Unable to generate a unique maze after 50 attempts.");
 }
 
-async function nextRound() {
-  maze = await generateUniqueMaze();
+async function nextRound(player: PlayerRecord) {
+  const bucket = bucketFor(player.mazesCompleted);
+  maze = await generateUniqueMaze(bucket);
   movement = createMovementState(maze);
   resize();
 }
@@ -63,28 +96,110 @@ function resize() {
   metrics = fitMetrics(canvas, maze.size);
 }
 
-async function ensurePlayerName(): Promise<string> {
-  const existing = await getPlayer();
-  if (existing?.name) return existing.name;
-  return new Promise((resolve) => {
-    dialog.showModal();
-    dialog.addEventListener(
+async function ensurePlayerName(): Promise<PlayerRecord> {
+  let p = await getPlayer();
+  if (p?.name) return p;
+  await new Promise<void>((resolve) => {
+    nameDialog.showModal();
+    nameDialog.addEventListener(
       "close",
       async () => {
         const name = (nameInput.value || "Player").trim().slice(0, 24);
         await setPlayerName(name);
-        resolve(name);
+        resolve();
       },
       { once: true },
     );
   });
+  p = await getPlayer();
+  if (!p) throw new Error("Player record not created");
+  return p;
 }
 
-async function updateHud() {
+/** Push skin colors into CSS variables so the HUD follows the active skin. */
+function applySkinToDom(s: Skin) {
+  const root = document.documentElement;
+  root.style.setProperty("--paper", s.palette.paper);
+  root.style.setProperty("--ink", s.palette.ink);
+  root.style.setProperty("--ink-soft", s.palette.accent);
+  root.style.setProperty("--accent", s.palette.accent);
+  root.style.setProperty("--dot", s.palette.character);
+  root.style.setProperty("--hud-bg", s.hudBackground);
+  root.style.setProperty("--skin-font", s.font);
+}
+
+function overridesFromPlayer(p: PlayerRecord): ShapeOverrides {
+  return {
+    character: p.characterOverride
+      ? { ...skin.character, name: p.characterOverride }
+      : null,
+    start: p.startOverride ? { ...skin.start, name: p.startOverride } : null,
+    goal: p.goalOverride ? { ...skin.goal, name: p.goalOverride } : null,
+  };
+}
+
+function refreshHud(p: PlayerRecord) {
+  nameEl.textContent = p.name;
+  scoreEl.textContent = String(p.mazesCompleted);
+}
+
+function populateShapeSelect(select: HTMLSelectElement, current: string | null) {
+  select.innerHTML = "";
+  const defaultOpt = document.createElement("option");
+  defaultOpt.value = "";
+  defaultOpt.textContent = "(skin default)";
+  select.appendChild(defaultOpt);
+  for (const name of listShapes()) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    if (current === name) opt.selected = true;
+    select.appendChild(opt);
+  }
+  if (!current) defaultOpt.selected = true;
+}
+
+function populateSettings(p: PlayerRecord) {
+  // Skin select
+  skinSelect.innerHTML = "";
+  for (const s of listSkins()) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.name;
+    if (s.id === p.skinId) opt.selected = true;
+    skinSelect.appendChild(opt);
+  }
+  // Hide the skin row if there is only one skin available (PRD §4.3).
+  const skinRow = skinSelect.closest("label");
+  if (skinRow) {
+    (skinRow as HTMLElement).style.display =
+      listSkins().length > 1 ? "" : "none";
+  }
+
+  populateShapeSelect(characterShapeSelect, p.characterOverride);
+  populateShapeSelect(startShapeSelect, p.startOverride);
+  populateShapeSelect(goalShapeSelect, p.goalOverride);
+}
+
+async function onSettingsChanged() {
+  const nextSkinId = skinSelect.value || DEFAULT_SKIN_ID;
+  if (nextSkinId !== skin.id) {
+    skin = getSkin(nextSkinId);
+    applySkinToDom(skin);
+    await setSkinId(nextSkinId);
+  }
+  const slotsToPersist: Array<[ShapeSlot, HTMLSelectElement]> = [
+    ["character", characterShapeSelect],
+    ["start", startShapeSelect],
+    ["goal", goalShapeSelect],
+  ];
+  for (const [slot, el] of slotsToPersist) {
+    await setShapeOverride(slot, el.value || null);
+  }
   const p = await getPlayer();
   if (p) {
-    nameEl.textContent = p.name;
-    scoreEl.textContent = String(p.mazesCompleted);
+    overrides = overridesFromPlayer(p);
+    refreshHud(p);
   }
 }
 
@@ -96,7 +211,17 @@ function frame(now: number) {
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
     const res = step(maze, movement, dt);
-    render(ctx, { maze, player: { x: movement.renderX, y: movement.renderY } }, metrics);
+    render(
+      ctx,
+      {
+        maze,
+        player: { x: movement.renderX, y: movement.renderY },
+        visited: movement.visited,
+      },
+      metrics,
+      skin,
+      overrides,
+    );
     if (res.reachedGoal) {
       completing = true;
       void onCompletion();
@@ -107,25 +232,40 @@ function frame(now: number) {
 
 async function onCompletion() {
   const h = await hashMaze(maze);
-  const total = await recordCompletion(h, maze.size, maze.seed);
-  scoreEl.textContent = String(total);
+  const currentBucket = bucketFor(
+    (await getPlayer())?.mazesCompleted ?? 0,
+  );
+  await recordCompletion(h, maze.size, maze.seed, currentBucket);
+  const p = await getPlayer();
+  if (p) refreshHud(p);
   // Brief pause, then next maze.
   await new Promise((r) => setTimeout(r, 600));
-  await nextRound();
+  if (p) await nextRound(p);
   completing = false;
 }
 
 async function boot() {
-  const name = await ensurePlayerName();
-  nameEl.textContent = name;
-  await nextRound();
-  await updateHud();
+  const player = await ensurePlayerName();
+  skin = getSkin(player.skinId);
+  applySkinToDom(skin);
+  overrides = overridesFromPlayer(player);
+  refreshHud(player);
+  await nextRound(player);
 
   attachSwipe(document.body, {
     onSwipe: (d) => {
       if (!maze || !movement) return;
       queueDirection(maze, movement, DIR_FROM_NAME[d]);
     },
+  });
+
+  settingsBtn.addEventListener("click", async () => {
+    const p = await getPlayer();
+    if (p) populateSettings(p);
+    settingsDialog.showModal();
+  });
+  settingsDialog.addEventListener("close", () => {
+    void onSettingsChanged();
   });
 
   window.addEventListener("resize", resize);

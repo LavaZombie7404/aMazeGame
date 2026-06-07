@@ -1,10 +1,21 @@
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
-// Vite serves the wasm file via ?url so the worker fetches it from a known path.
 import wasmUrl from "sql.js/dist/sql-wasm.wasm?url";
 
 const DB_KEY = "amazegame.sqlite";
 const IDB_NAME = "amazegame";
 const IDB_STORE = "kv";
+
+export type DifficultyBucket = "simple" | "complex";
+export type ShapeSlot = "character" | "start" | "goal";
+
+export interface PlayerRecord {
+  name: string;
+  mazesCompleted: number;
+  skinId: string;
+  characterOverride: string | null;
+  startOverride: string | null;
+  goalOverride: string | null;
+}
 
 let SQL: SqlJsStatic | null = null;
 let dbInstance: Database | null = null;
@@ -45,25 +56,57 @@ async function writeDbBlob(bytes: Uint8Array): Promise<void> {
   });
 }
 
+/**
+ * Idempotent forward-only migrations keyed off SQLite's PRAGMA user_version.
+ * Add new entries to the end — never reorder or remove.
+ */
+const migrations: Array<(db: Database) => void> = [
+  // v1 — initial schema.
+  (db) => {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS player (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        name TEXT NOT NULL,
+        mazes_completed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS completed_mazes (
+        hash TEXT PRIMARY KEY,
+        size INTEGER NOT NULL,
+        seed INTEGER NOT NULL,
+        completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  },
+  // v2 — skin selection + shape overrides + difficulty bucket on completions.
+  (db) => {
+    db.run(
+      `ALTER TABLE player ADD COLUMN skin_id TEXT NOT NULL DEFAULT 'math-textbook'`,
+    );
+    db.run(`ALTER TABLE player ADD COLUMN character_shape TEXT`);
+    db.run(`ALTER TABLE player ADD COLUMN start_shape TEXT`);
+    db.run(`ALTER TABLE player ADD COLUMN goal_shape TEXT`);
+    db.run(
+      `ALTER TABLE completed_mazes ADD COLUMN bucket TEXT NOT NULL DEFAULT 'simple'`,
+    );
+  },
+];
+
+function migrate(db: Database): void {
+  const res = db.exec("PRAGMA user_version");
+  const current = Number(res[0]?.values[0]?.[0] ?? 0);
+  for (let v = current; v < migrations.length; v++) {
+    migrations[v]!(db);
+  }
+  db.run(`PRAGMA user_version = ${migrations.length}`);
+}
+
 async function getDb(): Promise<Database> {
   if (dbInstance) return dbInstance;
   const sql = await getSql();
   const existing = await readDbBlob();
   dbInstance = existing ? new sql.Database(existing) : new sql.Database();
-  dbInstance.run(`
-    CREATE TABLE IF NOT EXISTS player (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      name TEXT NOT NULL,
-      mazes_completed INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE TABLE IF NOT EXISTS completed_mazes (
-      hash TEXT PRIMARY KEY,
-      size INTEGER NOT NULL,
-      seed INTEGER NOT NULL,
-      completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
+  migrate(dbInstance);
   return dbInstance;
 }
 
@@ -72,15 +115,23 @@ async function persist(): Promise<void> {
   await writeDbBlob(dbInstance.export());
 }
 
-export async function getPlayer(): Promise<{
-  name: string;
-  mazesCompleted: number;
-} | null> {
+export async function getPlayer(): Promise<PlayerRecord | null> {
   const db = await getDb();
-  const res = db.exec("SELECT name, mazes_completed FROM player WHERE id = 1");
+  const res = db.exec(
+    `SELECT name, mazes_completed, skin_id,
+            character_shape, start_shape, goal_shape
+       FROM player WHERE id = 1`,
+  );
   if (res.length === 0 || res[0]!.values.length === 0) return null;
   const row = res[0]!.values[0]!;
-  return { name: String(row[0]), mazesCompleted: Number(row[1]) };
+  return {
+    name: String(row[0]),
+    mazesCompleted: Number(row[1]),
+    skinId: String(row[2]),
+    characterOverride: row[3] === null ? null : String(row[3]),
+    startOverride: row[4] === null ? null : String(row[4]),
+    goalOverride: row[5] === null ? null : String(row[5]),
+  };
 }
 
 export async function setPlayerName(name: string): Promise<void> {
@@ -93,15 +144,38 @@ export async function setPlayerName(name: string): Promise<void> {
   await persist();
 }
 
+export async function setSkinId(skinId: string): Promise<void> {
+  const db = await getDb();
+  db.run(`UPDATE player SET skin_id = ? WHERE id = 1`, [skinId]);
+  await persist();
+}
+
+export async function setShapeOverride(
+  slot: ShapeSlot,
+  shape: string | null,
+): Promise<void> {
+  const column =
+    slot === "character"
+      ? "character_shape"
+      : slot === "start"
+        ? "start_shape"
+        : "goal_shape";
+  const db = await getDb();
+  db.run(`UPDATE player SET ${column} = ? WHERE id = 1`, [shape]);
+  await persist();
+}
+
 export async function recordCompletion(
   hash: string,
   size: number,
   seed: number,
+  bucket: DifficultyBucket,
 ): Promise<number> {
   const db = await getDb();
   db.run(
-    "INSERT OR IGNORE INTO completed_mazes (hash, size, seed) VALUES (?, ?, ?)",
-    [hash, size, seed],
+    `INSERT OR IGNORE INTO completed_mazes (hash, size, seed, bucket)
+     VALUES (?, ?, ?, ?)`,
+    [hash, size, seed, bucket],
   );
   db.run(
     `INSERT INTO player (id, name, mazes_completed)
@@ -121,10 +195,7 @@ export async function hasSeenMaze(hash: string): Promise<boolean> {
   return res.length > 0 && res[0]!.values.length > 0;
 }
 
-/**
- * Also remember mazes that were *generated* this session even if not completed
- * — prevents the same layout reappearing if the player resets mid-run.
- */
+/** In-memory set of mazes generated this session (not necessarily completed). */
 const sessionGenerated = new Set<string>();
 export function markGenerated(hash: string): void {
   sessionGenerated.add(hash);

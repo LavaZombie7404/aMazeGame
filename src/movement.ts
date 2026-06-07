@@ -1,4 +1,4 @@
-import { hasWall, type Maze, N, E, S, W } from "./maze";
+import { cellIndex, hasWall, type Maze, N, E, S, W } from "./maze";
 import type { Direction } from "./input";
 
 export const DIR_FROM_NAME: Record<Direction, number> = {
@@ -78,9 +78,14 @@ export interface MovementState {
   queuedDir: number | null;
   // Progress from 0..1 between current cell and next cell.
   progress: number;
+  // Cell-index set of cells the dot has occupied in this maze. Used for the
+  // trail (PRD §6.2). Backtracking through a cell is a no-op on this set.
+  visited: Set<number>;
 }
 
 export function createMovementState(maze: Maze): MovementState {
+  const visited = new Set<number>();
+  visited.add(cellIndex(maze.size, maze.start.x, maze.start.y));
   return {
     cellX: maze.start.x,
     cellY: maze.start.y,
@@ -89,6 +94,7 @@ export function createMovementState(maze: Maze): MovementState {
     dir: null,
     queuedDir: null,
     progress: 0,
+    visited,
   };
 }
 
@@ -123,6 +129,7 @@ export function step(maze: Maze, s: MovementState, dt: number): StepResult {
     s.cellY += vy;
     s.renderX = s.cellX;
     s.renderY = s.cellY;
+    s.visited.add(cellIndex(maze.size, s.cellX, s.cellY));
 
     if (s.cellX === maze.goal.x && s.cellY === maze.goal.y) {
       s.dir = null;
