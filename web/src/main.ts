@@ -237,6 +237,7 @@ function frame(now: number) {
       metrics,
       skin,
       overrides,
+      now,
     );
     if (res.reachedGoal) {
       completing = true;

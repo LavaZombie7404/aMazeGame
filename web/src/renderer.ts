@@ -65,6 +65,7 @@ function drawWalls(
   maze: Maze,
   m: ViewMetrics,
   skin: Skin,
+  tMs: number,
 ) {
   // Seed wobble from the maze so the same maze always looks the same.
   const rand = mulberry32(maze.seed ^ 0x9e3779b9);
@@ -73,16 +74,16 @@ function drawWalls(
       const px = m.offsetX + x * m.cell;
       const py = m.offsetY + y * m.cell;
       if (hasWall(maze, x, y, N)) {
-        skin.drawWall(ctx, px, py, px + m.cell, py, rand);
+        skin.drawWall(ctx, px, py, px + m.cell, py, rand, tMs);
       }
       if (hasWall(maze, x, y, W)) {
-        skin.drawWall(ctx, px, py, px, py + m.cell, rand);
+        skin.drawWall(ctx, px, py, px, py + m.cell, rand, tMs);
       }
       if (y === maze.size - 1 && hasWall(maze, x, y, S)) {
-        skin.drawWall(ctx, px, py + m.cell, px + m.cell, py + m.cell, rand);
+        skin.drawWall(ctx, px, py + m.cell, px + m.cell, py + m.cell, rand, tMs);
       }
       if (x === maze.size - 1 && hasWall(maze, x, y, E)) {
-        skin.drawWall(ctx, px + m.cell, py, px + m.cell, py + m.cell, rand);
+        skin.drawWall(ctx, px + m.cell, py, px + m.cell, py + m.cell, rand, tMs);
       }
     }
   }
@@ -182,12 +183,13 @@ export function render(
   m: ViewMetrics,
   skin: Skin,
   overrides: ShapeOverrides,
+  tMs: number,
 ) {
   ctx.save();
   ctx.scale(m.dpr, m.dpr);
 
-  skin.drawBackground(ctx, m);
-  drawWalls(ctx, state.maze, m, skin);
+  skin.drawBackground(ctx, m, tMs);
+  drawWalls(ctx, state.maze, m, skin, tMs);
   drawTrail(ctx, state.maze, state.visited, m, skin.trail);
 
   // Start marker

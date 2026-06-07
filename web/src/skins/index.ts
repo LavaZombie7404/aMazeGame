@@ -1,8 +1,16 @@
 import type { Skin } from "./types";
 import { mathTextbookSkin } from "./math-textbook";
+import {
+  geometryDashClassicSkin,
+  geometryDashMeltdownSkin,
+  geometryDashSubZeroSkin,
+} from "./geometry-dash";
 
 const REGISTRY: Record<string, Skin> = {
   [mathTextbookSkin.id]: mathTextbookSkin,
+  [geometryDashClassicSkin.id]: geometryDashClassicSkin,
+  [geometryDashSubZeroSkin.id]: geometryDashSubZeroSkin,
+  [geometryDashMeltdownSkin.id]: geometryDashMeltdownSkin,
 };
 
 export const DEFAULT_SKIN_ID = mathTextbookSkin.id;

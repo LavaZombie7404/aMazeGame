@@ -116,10 +116,11 @@ export const mathTextbookSkin: Skin = {
   },
   font: '"Patrick Hand", "Comic Sans MS", "Bradley Hand", system-ui, sans-serif',
   hudBackground: "rgba(247, 243, 232, 0.85)",
-  drawBackground(ctx, m) {
+  // tMs is accepted but unused — math-textbook is intentionally static.
+  drawBackground(ctx, m, _tMs) {
     drawPaper(ctx, m);
   },
-  drawWall(ctx, x1, y1, x2, y2, rand) {
+  drawWall(ctx, x1, y1, x2, y2, rand, _tMs) {
     penStroke(ctx, x1, y1, x2, y2, rand);
   },
   character: {

@@ -73,7 +73,9 @@ pub fn is_decision_cell(maze: &Maze, x: u32, y: u32, incoming_dir: i32) -> bool 
     if exits.is_empty() {
         return true;
     }
-    !(exits.len() == 1 && incoming_dir >= 0 && exits[0] == incoming_dir)
+    // Single-exit cells (including forced turns) are auto-routed — the
+    // player isn't choosing there. Only stop at real forks or dead-ends.
+    exits.len() != 1
 }
 
 pub struct StepResult {
@@ -109,17 +111,37 @@ pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
             return StepResult { reached_goal: true };
         }
 
-        if is_decision_cell(maze, s.cell_x, s.cell_y, s.dir) {
-            if s.queued_dir >= 0
-                && can_move(maze, s.cell_x, s.cell_y, s.queued_dir as u8)
-            {
-                s.dir = s.queued_dir;
-                s.queued_dir = -1;
-            } else {
-                s.dir = -1;
-                s.progress = 0.0;
-                return StepResult { reached_goal: false };
+        // Auto-route through any single-exit cell; only stop at forks /
+        // dead-ends / goal.
+        let back = (s.dir + 2) % 4;
+        let mut single_exit: i32 = -1;
+        let mut exit_count = 0u32;
+        for d in 0..4i32 {
+            if d == back {
+                continue;
             }
+            if can_move(maze, s.cell_x, s.cell_y, d as u8) {
+                exit_count += 1;
+                if exit_count == 1 {
+                    single_exit = d;
+                }
+            }
+        }
+        if exit_count == 0 {
+            s.dir = -1;
+            s.progress = 0.0;
+            return StepResult { reached_goal: false };
+        } else if exit_count == 1 {
+            s.dir = single_exit;
+        } else if s.queued_dir >= 0
+            && can_move(maze, s.cell_x, s.cell_y, s.queued_dir as u8)
+        {
+            s.dir = s.queued_dir;
+            s.queued_dir = -1;
+        } else {
+            s.dir = -1;
+            s.progress = 0.0;
+            return StepResult { reached_goal: false };
         }
     }
 

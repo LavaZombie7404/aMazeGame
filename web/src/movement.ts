@@ -56,12 +56,14 @@ export function isDecisionCell(
 ): boolean {
   // Goal is always a decision (stop).
   if (x === maze.goal.x && y === maze.goal.y) return true;
-  // Decision = anything other than "exactly one forward exit".
+  // The walker only stops when the player actually has to choose. A single-
+  // exit cell is auto-routed even when it's a forced turn — the player isn't
+  // making a decision there, the maze is. Only a real fork (2+ exits) or a
+  // dead-end (0 exits) stops the walker.
   const back = incomingDir === null ? null : (incomingDir + 2) % 4;
   const exits = openExits(maze, x, y, back);
   if (exits.length === 0) return true; // dead-end
-  if (exits.length === 1 && incomingDir !== null && exits[0] === incomingDir)
-    return false; // straight corridor
+  if (exits.length === 1) return false; // single forced path — auto-take
   return true;
 }
 
@@ -138,9 +140,20 @@ export function step(maze: Maze, s: MovementState, dt: number): StepResult {
       return { reachedGoal: true };
     }
 
-    // At a new cell — decide what to do.
-    if (isDecisionCell(maze, s.cellX, s.cellY, s.dir)) {
-      // If the queued direction is a valid exit from this cell, take it.
+    // At a new cell — auto-route through any single-exit cell, only stop at
+    // forks / dead-ends / goal.
+    const back = (s.dir! + 2) % 4;
+    const exits = openExits(maze, s.cellX, s.cellY, back);
+    if (exits.length === 0) {
+      // Dead-end.
+      s.dir = null;
+      s.progress = 0;
+      return { reachedGoal: false };
+    } else if (exits.length === 1) {
+      // Single forced path — auto-take it (might be a turn).
+      s.dir = exits[0]!;
+    } else {
+      // Real fork. Honour the queued direction if valid, otherwise stop.
       if (s.queuedDir !== null && canMove(maze, s.cellX, s.cellY, s.queuedDir)) {
         s.dir = s.queuedDir;
         s.queuedDir = null;
@@ -149,8 +162,6 @@ export function step(maze: Maze, s: MovementState, dt: number): StepResult {
         s.progress = 0;
         return { reachedGoal: false };
       }
-    } else {
-      // Straight corridor — continue in the same direction. Already set.
     }
   }
 
