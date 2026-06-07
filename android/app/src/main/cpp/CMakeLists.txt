@@ -39,6 +39,19 @@ set(WAMR_BUILD_LIBC_WASI     0 CACHE STRING "" FORCE)
 # baked into amaze_native, and iwasm_shared exposes no symbols anyway due
 # to -fvisibility=hidden.
 set(WAMR_BUILD_SHARED        0 CACHE STRING "" FORCE)
+# Use software bounds checks instead of WAMR's SIGSEGV-handler fast path.
+# Android's debuggerd installs its own SIGSEGV handler for tombstone capture
+# and gets to the signal before WAMR's, so the WASM linear-memory access
+# trapped by WAMR turns into a process kill instead of a recoverable bounds
+# check. Software checks cost a few % perf and just work.
+set(WAMR_DISABLE_HW_BOUND_CHECK       1 CACHE STRING "" FORCE)
+set(WAMR_DISABLE_STACK_HW_BOUND_CHECK 1 CACHE STRING "" FORCE)
+# Rust 1.82+ emits the reference-types proposal opcodes (ref.null, table.*).
+# Default WAMR builds reject those with "zero byte expected" mid-section.
+# Turn on ref-types + tail-call + multi-value just in case — they all match
+# what Rust 1.96 emits by default for wasm32-unknown-unknown.
+set(WAMR_BUILD_REF_TYPES     1 CACHE STRING "" FORCE)
+set(WAMR_BUILD_TAIL_CALL     1 CACHE STRING "" FORCE)
 
 # WAMR — WebAssembly Micro Runtime. Pinned to a tested release tag.
 include(FetchContent)
