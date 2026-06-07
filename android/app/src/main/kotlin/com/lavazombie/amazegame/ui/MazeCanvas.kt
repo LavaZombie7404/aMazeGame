@@ -10,45 +10,36 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lavazombie.amazegame.Direction
 import com.lavazombie.amazegame.GameRuntime
 import com.lavazombie.amazegame.GameState
+import com.lavazombie.amazegame.PlayerStore
+import com.lavazombie.amazegame.apply
+import com.lavazombie.amazegame.ui.shapes.drawShape
+import com.lavazombie.amazegame.ui.skins.TrailStyle
 import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
 
 /**
- * Compose Canvas renderer for the math-textbook skin, parity with
- * `web/src/skins/math-textbook.ts`. Reads `GameRuntime.state` (driven by the
- * WAMR-hosted Rust core), draws the same notebook paper + hand-drawn
- * pen-stroke walls + dot character.
+ * Renders whatever skin the player has active. The skin drives background,
+ * walls, character/start/goal shapes (subject to player overrides) and the
+ * trail style. The renderer itself is skin-agnostic.
  */
 private const val MAX_CELLS_ON_SCREEN = 17
-
-private val PAPER = Color(0xFFF7F3E8)
-private val PAPER_LINE = Color(0xFFB9C7D8)
-private val PAPER_MARGIN = Color(0xFFE9A3A6)
-private val INK = Color(0xFF1D2433)
-private val INK_SOFT = Color(0xFF2A3450)
-private val DOT = Color(0xFFC83B3B)
-private val GOAL = Color(0xFF2F6FB8)
-private val TRAIL = Color(0xFF7896C2)
 
 @Composable
 fun MazeCanvas(game: GameRuntime, modifier: Modifier = Modifier) {
     val state by game.state.collectAsStateWithLifecycle()
+    val player by game.player.collectAsStateWithLifecycle()
+    val skin = player.skin
+    val overrides = player.overrides
 
     LaunchedEffect(Unit) {
         var last = System.nanoTime()
@@ -64,7 +55,7 @@ fun MazeCanvas(game: GameRuntime, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(PAPER)
+            .background(skin.palette.paper)
             .pointerInput(Unit) {
                 var startOffset = Offset.Zero
                 var lastDir: Direction? = null
@@ -99,20 +90,47 @@ fun MazeCanvas(game: GameRuntime, modifier: Modifier = Modifier) {
             val offsetX = (size.width - board) / 2f
             val offsetY = (size.height - board) / 2f
 
-            drawPaper(size, cell, offsetX, offsetY)
-            drawTrail(s, cell, offsetX, offsetY)
-            // Deterministic wobble per maze so walls don't shimmer between frames.
-            val rng = Mulberry32(s.hashHex.hashCode() xor 0x9e3779b9.toInt())
-            drawWalls(s, cell, offsetX, offsetY, rng)
+            skin.drawBackground(this, size, cell, offsetX, offsetY)
+            drawTrail(s, cell, offsetX, offsetY, skin.trail)
 
-            drawGoalMarker(s, cell, offsetX, offsetY)
-            drawPlayer(s, cell, offsetX, offsetY)
+            val rng = Mulberry32(s.hashHex.hashCode() xor 0x9e3779b9.toInt())
+            for (y in 0 until s.mazeSize) {
+                for (x in 0 until s.mazeSize) {
+                    val mask = s.walls[y * s.mazeSize + x].toInt() and 0xff
+                    val px = offsetX + x * cell
+                    val py = offsetY + y * cell
+                    if (mask and 0b0001 != 0) {
+                        skin.drawWall(this, px, py, px + cell, py) { rng.next() }
+                    }
+                    if (mask and 0b1000 != 0) {
+                        skin.drawWall(this, px, py, px, py + cell) { rng.next() }
+                    }
+                    if (y == s.mazeSize - 1 && mask and 0b0100 != 0) {
+                        skin.drawWall(this, px, py + cell, px + cell, py + cell) { rng.next() }
+                    }
+                    if (x == s.mazeSize - 1 && mask and 0b0010 != 0) {
+                        skin.drawWall(this, px + cell, py, px + cell, py + cell) { rng.next() }
+                    }
+                }
+            }
+
+            // start
+            val startCenter = Offset(offsetX + (s.startX + 0.5f) * cell, offsetY + (s.startY + 0.5f) * cell)
+            drawShape(overrides.apply(PlayerStore.ShapeSlot.Start, skin.start), startCenter, cell)
+            // goal
+            val goalCenter = Offset(offsetX + (s.goalX + 0.5f) * cell, offsetY + (s.goalY + 0.5f) * cell)
+            drawShape(overrides.apply(PlayerStore.ShapeSlot.Goal, skin.goal), goalCenter, cell)
+            // player + soft shadow under it
+            val playerCenter = Offset(offsetX + (s.playerX + 0.5f) * cell, offsetY + (s.playerY + 0.5f) * cell)
+            val character = overrides.apply(PlayerStore.ShapeSlot.Character, skin.character)
+            val r = max(4f, cell * character.sizeFactor * 0.5f)
+            drawCircle(Color(0x2E1D2433), radius = r, center = Offset(playerCenter.x + 1.5f, playerCenter.y + 2f))
+            drawShape(character, playerCenter, cell)
         }
     }
 }
 
-// --- Mulberry32 ports the same seed-deterministic RNG the web uses so the
-// wobble is stable across frames. Not cryptographic.
+/** Mulberry32 — same byte-for-byte seed as the web's wall RNG. */
 private class Mulberry32(seed: Int) {
     private var state: Int = seed
     fun next(): Float {
@@ -125,105 +143,12 @@ private class Mulberry32(seed: Int) {
     }
 }
 
-private fun DrawScope.drawPaper(
-    canvasSize: Size,
-    cell: Float,
-    offsetX: Float,
-    offsetY: Float,
-) {
-    val offX = ((offsetX % cell) + cell) % cell
-    val offY = ((offsetY % cell) + cell) % cell
-    var x = offX
-    while (x < canvasSize.width) {
-        drawLine(PAPER_LINE.copy(alpha = 0.5f), Offset(x, 0f), Offset(x, canvasSize.height), strokeWidth = 1f)
-        x += cell
-    }
-    var y = offY
-    while (y < canvasSize.height) {
-        drawLine(PAPER_LINE.copy(alpha = 0.5f), Offset(0f, y), Offset(canvasSize.width, y), strokeWidth = 1f)
-        y += cell
-    }
-    val marginX = min(48f, canvasSize.width * 0.08f)
-    drawLine(PAPER_MARGIN.copy(alpha = 0.7f), Offset(marginX, 0f), Offset(marginX, canvasSize.height), strokeWidth = 1.2f)
-}
-
-/** Web parity: see `web/src/skins/math-textbook.ts`'s `penStroke`. */
-private fun DrawScope.penStroke(
-    x1: Float, y1: Float,
-    x2: Float, y2: Float,
-    rng: Mulberry32,
-) {
-    val dx = x2 - x1
-    val dy = y2 - y1
-    val len = hypot(dx, dy)
-    if (len == 0f) return
-    val nx = -dy / len
-    val ny = dx / len
-    val steps = max(6, (len / 6f).toInt())
-
-    val overshoot = 1.5f + rng.next() * 2.5f
-    val sx = x1 - dx / len * overshoot
-    val sy = y1 - dy / len * overshoot
-    val ex = x2 + dx / len * overshoot
-    val ey = y2 + dy / len * overshoot
-
-    val lineWidth = 2.2f + rng.next() * 0.6f
-
-    val path = Path().apply {
-        moveTo(sx, sy)
-        for (i in 1..steps) {
-            val t = i.toFloat() / steps
-            val px = sx + (ex - sx) * t
-            val py = sy + (ey - sy) * t
-            val wobble = (rng.next() - 0.5f) * 1.6f
-            lineTo(px + nx * wobble, py + ny * wobble)
-        }
-    }
-    drawPath(
-        path,
-        INK,
-        style = Stroke(width = lineWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
-    )
-    // Occasional ink pool at the start endpoint.
-    if (rng.next() < 0.35f) {
-        drawCircle(INK, radius = 1.5f + rng.next(), center = Offset(sx, sy))
-    }
-}
-
-private fun DrawScope.drawWalls(
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTrail(
     s: GameState,
     cell: Float,
     offsetX: Float,
     offsetY: Float,
-    rng: Mulberry32,
-) {
-    val n = s.mazeSize
-    for (y in 0 until n) {
-        for (x in 0 until n) {
-            val mask = s.walls[y * n + x].toInt() and 0xff
-            val px = offsetX + x * cell
-            val py = offsetY + y * cell
-            if (mask and 0b0001 != 0) {        // N
-                penStroke(px, py, px + cell, py, rng)
-            }
-            if (mask and 0b1000 != 0) {        // W
-                penStroke(px, py, px, py + cell, rng)
-            }
-            if (y == n - 1 && mask and 0b0100 != 0) {   // S boundary
-                penStroke(px, py + cell, px + cell, py + cell, rng)
-            }
-            if (x == n - 1 && mask and 0b0010 != 0) {   // E boundary
-                penStroke(px + cell, py, px + cell, py + cell, rng)
-            }
-        }
-    }
-}
-
-private fun DrawScope.drawTrail(
-    s: GameState,
-    cell: Float,
-    offsetX: Float,
-    offsetY: Float,
+    trail: TrailStyle,
 ) {
     if (s.visitedCells.isEmpty()) return
     val visited = s.visitedCells.toHashSet()
@@ -242,35 +167,5 @@ private fun DrawScope.drawTrail(
             path.moveTo(cx, cy); path.lineTo(cx, offsetY + (y + 1 + 0.5f) * cell)
         }
     }
-    drawPath(path, TRAIL.copy(alpha = 0.55f), style = Stroke(width = 4f))
-}
-
-private fun DrawScope.drawGoalMarker(
-    s: GameState,
-    cell: Float,
-    offsetX: Float,
-    offsetY: Float,
-) {
-    val cx = offsetX + (s.goalX + 0.5f) * cell
-    val cy = offsetY + (s.goalY + 0.5f) * cell
-    val r = cell * 0.28f
-    drawCircle(GOAL, radius = r, center = Offset(cx, cy), style = Stroke(width = 2f))
-    drawCircle(GOAL.copy(alpha = 0.6f), radius = r * 0.55f, center = Offset(cx, cy))
-}
-
-private fun DrawScope.drawPlayer(
-    s: GameState,
-    cell: Float,
-    offsetX: Float,
-    offsetY: Float,
-) {
-    val cx = offsetX + (s.playerX + 0.5f) * cell
-    val cy = offsetY + (s.playerY + 0.5f) * cell
-    val r = max(4f, cell * 0.22f)
-    // soft shadow
-    drawCircle(Color(0x2E1D2433), radius = r, center = Offset(cx + 1.5f, cy + 2f))
-    drawCircle(DOT, radius = r, center = Offset(cx, cy))
-    drawCircle(INK_SOFT, radius = r, center = Offset(cx, cy), style = Stroke(width = 1.3f))
-    // suppress unused warnings on imports
-    @Suppress("UNUSED_VARIABLE") val _unused = sqrt(1.0)
+    drawPath(path, trail.color.copy(alpha = trail.alpha), style = Stroke(width = trail.width))
 }

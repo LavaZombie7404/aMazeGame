@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lavazombie.amazegame.GameRuntime
+import com.lavazombie.amazegame.PlayerStore
 
 private val PAPER = Color(0xFFF7F3E8)
 private val PAPER_HUD = Color(0xD9F7F3E8)
@@ -50,18 +51,33 @@ private val INK_SOFT = Color(0xFF2A3450)
 fun MainScreen(game: GameRuntime) {
     val player by game.player.collectAsStateWithLifecycle()
     val needsName = player.name.isNullOrBlank()
+    var settingsOpen by remember { mutableStateOf(false) }
 
     if (needsName) {
         NameDialog(onSubmit = { game.setPlayerName(it) })
     }
 
-    Box(Modifier.fillMaxSize().background(PAPER)) {
+    if (settingsOpen) {
+        SettingsDialog(
+            currentSkinId = player.skin.id,
+            characterOverride = player.overrides.character,
+            startOverride = player.overrides.start,
+            goalOverride = player.overrides.goal,
+            onSkinChange = { game.setSkin(it) },
+            onShapeChange = { slot: PlayerStore.ShapeSlot, name: String? ->
+                game.setShapeOverride(slot, name)
+            },
+            onDismiss = { settingsOpen = false },
+        )
+    }
+
+    Box(Modifier.fillMaxSize().background(player.skin.palette.paper)) {
         Column(Modifier.fillMaxSize()) {
             Hud(
                 playerName = player.name ?: "—",
                 mazesSolved = player.mazesCompleted,
                 onReset = { game.reset() },
-                onSettings = { /* future: skin/shape picker dialog */ },
+                onSettings = { settingsOpen = true },
             )
             // The canvas occupies the rest of the screen.
             Box(Modifier.weight(1f)) {

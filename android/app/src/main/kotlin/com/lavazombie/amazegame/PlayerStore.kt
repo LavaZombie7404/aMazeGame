@@ -4,10 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 
 /**
- * Lightweight wrapper around SharedPreferences for the scaffold. The web
- * app uses sql.js + IndexedDB for richer queries; on Android we'll switch
- * to Room (or sql.js compiled via WAMR, identical to the web) when stats
- * grow beyond name + counter.
+ * SharedPreferences-backed persistence for the player record. Mirrors
+ * `web/src/storage.ts`'s `player` table fields (name, mazes_completed,
+ * skin_id, character_shape, start_shape, goal_shape).
+ *
+ * Will switch to Room (or the same sql.js-via-WAMR path the web uses) when
+ * stats grow beyond this; the API surface is intentionally tiny.
  */
 class PlayerStore(context: Context) {
     private val sp: SharedPreferences =
@@ -15,15 +17,22 @@ class PlayerStore(context: Context) {
 
     var name: String?
         get() = sp.getString(KEY_NAME, null)
-        set(value) {
-            sp.edit().putString(KEY_NAME, value).apply()
-        }
+        set(value) { sp.edit().putString(KEY_NAME, value).apply() }
 
     var mazesCompleted: Int
         get() = sp.getInt(KEY_SCORE, 0)
-        set(value) {
-            sp.edit().putInt(KEY_SCORE, value).apply()
-        }
+        set(value) { sp.edit().putInt(KEY_SCORE, value).apply() }
+
+    var skinId: String
+        get() = sp.getString(KEY_SKIN, null) ?: "math-textbook"
+        set(value) { sp.edit().putString(KEY_SKIN, value).apply() }
+
+    fun shapeOverride(slot: ShapeSlot): String? = sp.getString(slot.key, null)
+    fun setShapeOverride(slot: ShapeSlot, name: String?) {
+        sp.edit().apply {
+            if (name == null) remove(slot.key) else putString(slot.key, name)
+        }.apply()
+    }
 
     fun incrementMazesCompleted(): Int {
         val next = mazesCompleted + 1
@@ -31,8 +40,15 @@ class PlayerStore(context: Context) {
         return next
     }
 
+    enum class ShapeSlot(val key: String) {
+        Character("shape_character"),
+        Start("shape_start"),
+        Goal("shape_goal"),
+    }
+
     companion object {
         private const val KEY_NAME = "player_name"
         private const val KEY_SCORE = "mazes_completed"
+        private const val KEY_SKIN = "skin_id"
     }
 }
