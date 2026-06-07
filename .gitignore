@@ -8,3 +8,13 @@ dist
 !.env.example
 tsconfig.tsbuildinfo
 *.tsbuildinfo
+
+# Playwright artifacts — keep the repo clean.
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+.last-run.json
+trace.zip
+*.webm
+*.zip
