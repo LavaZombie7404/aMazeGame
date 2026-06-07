@@ -4,22 +4,43 @@ This document is the source of truth for what aMazeGame should do. Update it whe
 
 Status tags used below: **[done]** shipped to `main`; **[planned]** agreed, not built; **[future]** intent only, may evolve.
 
-## 1. Platform
+## 1. Platforms
 
-- **Mobile-first** web app. Primary target: Android Chrome (touch input, portrait orientation). Desktop is supported as a development fallback. **[done]**
-- Static site, hosted on **GitHub Pages**. **[done]**
+aMazeGame ships on **two parallel platforms** sharing one game core:
+
+- **Web** — mobile-first, primary target Android Chrome (touch input, portrait orientation). Desktop supported as dev fallback. Static site, hosted on **GitHub Pages**. **[done]**
+- **Native Android** — Kotlin + Jetpack Compose. Loads the same Rust → WASM core inside the app via WAMR (WebAssembly Micro Runtime); **not a WebView**. Scaffold landed; first APK build is **[planned]**. See `android/README.md` and [`architecture.md`](architecture.md).
 
 ## 2. Tech stack (current)
 
+Shared:
+- **Rust** core (`core/`) — compiles to `amaze_core.wasm`, C ABI, byte-identical on both platforms. **[done]**
+
+Web:
 - **Vanilla TypeScript** (no UI framework). **[done]**
 - **HTML5 Canvas** for rendering. **[done]**
 - **sql.js** (SQLite compiled to WebAssembly) for player + statistics, persisted to **IndexedDB**. **[done]**
 - **Vite** as the dev server and bundler. **[done]**
 - **GitHub Actions** for CI/CD deployment to GitHub Pages. **[done]**
 
+Android:
+- **Kotlin** + **Jetpack Compose** UI; **[done — scaffold]**
+- **WAMR** (WebAssembly Micro Runtime) embedded via NDK + CMake `FetchContent`; **[done — scaffold]**
+- JNI bridge (`cpp/core_bridge.cc`) — ABI-version handshake works; per-function exports **[planned]**.
+- **Ktor** embedded HTTP server (`PuppetServer`) on `127.0.0.1:8088` for puppeting from Claude Code. **[done — scaffold]**
+
 ## 3. Tech stack (planned, not yet built)
 
-- A **WASM game engine layer** (TBD: Rust + wasm-bindgen, or a small custom engine) to host advanced rendering once the skins library outgrows what's comfortable in plain Canvas. **[future]**
+- Per-function JNI bridges for every export in `core/src/lib.rs`. **[planned]**
+- Migrate web gameplay path from the TS duplicates (`web/src/maze.ts`, `movement.ts`, `rng.ts`) onto the WASM core, then delete the duplicates. **[planned]**
+- A heavier rendering layer (likely Rust too) once the skins library outgrows Canvas / Compose Canvas — required for the Geometry Dash phase-2 skin. **[future]**
+
+## 3a. Puppet API (Claude Code ↔ running app)
+
+A control + observation surface so Claude Code can drive scenarios on either platform:
+
+- Web: Chrome DevTools Protocol via `adb forward tcp:9222 localabstract:chrome_devtools_remote`. `scripts/drive-phone.mjs` and `scripts/inspect-phone.mjs` are the working recipes. **[done]**
+- Android: local HTTP on `127.0.0.1:8088`, forwarded with `adb forward tcp:8088 tcp:8088`. Endpoints `/health`, `/state`, `/control/swipe`, `/control/reset` are live in the scaffold; `/scenarios` (batch step + assertion playback) is **[planned]**.
 
 ## 4. Skins system
 
