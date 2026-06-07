@@ -5,10 +5,9 @@
 // One CoreBridge -> one wasm_module_inst_t. The Kotlin side opens
 // `assets/core.wasm` via AAssetManager, hands the bytes here, and the JNI
 // functions below translate Kotlin arguments to WAMR's wasm_runtime_call_wasm
-// calls.
-//
-// This file is the integration point. The Compose UI never calls these
-// directly — it talks to CoreBridge.kt which talks to us.
+// calls. WASM pointers crossing the boundary are u32 offsets into the WASM
+// linear memory; reads/writes go through wasm_runtime_addr_app_to_native to
+// turn an offset into a host pointer the JNI code can memcpy from / to.
 
 #include <jni.h>
 #include <android/asset_manager.h>
@@ -17,7 +16,6 @@
 #include <cstring>
 #include <vector>
 
-// WAMR public headers.
 #include "wasm_export.h"
 
 #define LOG_TAG "amaze-core"
@@ -47,19 +45,82 @@ std::vector<uint8_t> readAsset(JNIEnv* env, jobject assetManagerObj, const char*
     return out;
 }
 
-// Invoke a 0-arg WASM export returning i32 (used for ABI version, etc.).
-int32_t callI32(Module* m, const char* name) {
-    wasm_function_inst_t fn = wasm_runtime_lookup_function(m->instance, name);
-    if (!fn) return -1;
-    wasm_val_t result{};
-    if (!wasm_runtime_call_wasm_a(m->exec_env, fn, 1, &result, 0, nullptr)) {
-        LOGE("WASM call %s failed: %s", name, wasm_runtime_get_exception(m->instance));
-        return -1;
-    }
-    return result.of.i32;
+inline wasm_function_inst_t fn(Module* m, const char* name) {
+    wasm_function_inst_t f = wasm_runtime_lookup_function(m->instance, name);
+    if (!f) LOGE("missing WASM export: %s", name);
+    return f;
 }
 
+inline void logEx(Module* m, const char* name) {
+    LOGE("WASM call %s failed: %s", name, wasm_runtime_get_exception(m->instance));
+}
+
+// --- typed call wrappers --------------------------------------------------
+
+int32_t call_i_i(Module* m, const char* name, int32_t a0) {
+    wasm_function_inst_t f = fn(m, name);
+    if (!f) return -1;
+    wasm_val_t arg = {}; arg.kind = WASM_I32; arg.of.i32 = a0;
+    wasm_val_t res = {}; res.kind = WASM_I32;
+    if (!wasm_runtime_call_wasm_a(m->exec_env, f, 1, &res, 1, &arg)) {
+        logEx(m, name);
+        return -1;
+    }
+    return res.of.i32;
+}
+
+int32_t call_ii_i(Module* m, const char* name, int32_t a0, int32_t a1) {
+    wasm_function_inst_t f = fn(m, name);
+    if (!f) return -1;
+    wasm_val_t args[2] = {};
+    args[0].kind = WASM_I32; args[0].of.i32 = a0;
+    args[1].kind = WASM_I32; args[1].of.i32 = a1;
+    wasm_val_t res = {}; res.kind = WASM_I32;
+    if (!wasm_runtime_call_wasm_a(m->exec_env, f, 1, &res, 2, args)) {
+        logEx(m, name);
+        return -1;
+    }
+    return res.of.i32;
+}
+
+float call_i_f(Module* m, const char* name, int32_t a0) {
+    wasm_function_inst_t f = fn(m, name);
+    if (!f) return 0.0f;
+    wasm_val_t arg = {}; arg.kind = WASM_I32; arg.of.i32 = a0;
+    wasm_val_t res = {}; res.kind = WASM_F32;
+    if (!wasm_runtime_call_wasm_a(m->exec_env, f, 1, &res, 1, &arg)) {
+        logEx(m, name);
+        return 0.0f;
+    }
+    return res.of.f32;
+}
+
+void call_i_v(Module* m, const char* name, int32_t a0) {
+    wasm_function_inst_t f = fn(m, name);
+    if (!f) return;
+    wasm_val_t arg = {}; arg.kind = WASM_I32; arg.of.i32 = a0;
+    if (!wasm_runtime_call_wasm_a(m->exec_env, f, 0, nullptr, 1, &arg)) {
+        logEx(m, name);
+    }
+}
+
+void call_ii_v(Module* m, const char* name, int32_t a0, int32_t a1) {
+    wasm_function_inst_t f = fn(m, name);
+    if (!f) return;
+    wasm_val_t args[2] = {};
+    args[0].kind = WASM_I32; args[0].of.i32 = a0;
+    args[1].kind = WASM_I32; args[1].of.i32 = a1;
+    if (!wasm_runtime_call_wasm_a(m->exec_env, f, 0, nullptr, 2, args)) {
+        logEx(m, name);
+    }
+}
+
+inline Module* mod(jlong h) { return reinterpret_cast<Module*>(h); }
+inline int32_t game32(jlong g) { return static_cast<int32_t>(static_cast<uint32_t>(g)); }
+
 } // namespace
+
+// ===== Lifecycle =========================================================
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_lavazombie_amazegame_CoreBridge_nativeInit(
@@ -67,7 +128,7 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeInit(
 
     static bool wamrUp = false;
     if (!wamrUp) {
-        RuntimeInitArgs args{};
+        RuntimeInitArgs args = {};
         args.mem_alloc_type = Alloc_With_System_Allocator;
         if (!wasm_runtime_full_init(&args)) {
             LOGE("wasm_runtime_full_init failed");
@@ -79,7 +140,7 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeInit(
     auto bytes = readAsset(env, assetManagerObj, "core.wasm");
     if (bytes.empty()) return 0;
 
-    auto* m = new Module{};
+    auto* m = new Module();
     m->bytes = std::move(bytes);
 
     char errBuf[256] = {0};
@@ -90,7 +151,7 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeInit(
         delete m;
         return 0;
     }
-    // 256 KiB stack, 1 MiB heap is plenty for the maze core.
+    // 256 KiB stack, 1 MiB heap. Sufficient for the maze core.
     m->instance = wasm_runtime_instantiate(
         m->module, 256 * 1024, 1024 * 1024, errBuf, sizeof(errBuf));
     if (!m->instance) {
@@ -107,13 +168,14 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeInit(
         delete m;
         return 0;
     }
+    LOGI("core.wasm loaded; %zu bytes; module @ %p", m->bytes.size(), m->module);
     return reinterpret_cast<jlong>(m);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_lavazombie_amazegame_CoreBridge_nativeDestroy(
     JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
-    auto* m = reinterpret_cast<Module*>(handle);
+    auto* m = mod(handle);
     if (!m) return;
     if (m->exec_env) wasm_runtime_destroy_exec_env(m->exec_env);
     if (m->instance) wasm_runtime_deinstantiate(m->instance);
@@ -124,14 +186,161 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeDestroy(
 extern "C" JNIEXPORT jint JNICALL
 Java_com_lavazombie_amazegame_CoreBridge_nativeAbiVersion(
     JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
-    return callI32(reinterpret_cast<Module*>(handle), "core_abi_version");
+    auto* m = mod(handle);
+    wasm_function_inst_t f = fn(m, "core_abi_version");
+    if (!f) return -1;
+    wasm_val_t res = {}; res.kind = WASM_I32;
+    if (!wasm_runtime_call_wasm_a(m->exec_env, f, 1, &res, 0, nullptr)) {
+        logEx(m, "core_abi_version");
+        return -1;
+    }
+    return res.of.i32;
 }
 
-// The remaining JNI functions (game_new, step, queue_direction, …) follow
-// the same pattern: lookup the function, package args as wasm_val_t, call,
-// translate result back. Implemented in a follow-up commit alongside the
-// Compose renderer using them.
-//
-// For the scaffold landing here, the runtime initialises and the ABI
-// handshake works end-to-end — proof the WAMR + Rust core pipeline closes
-// on Android. The richer surface lands next.
+// ===== Game lifecycle ====================================================
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeGameNew(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jint size, jint seed) {
+    auto* m = mod(handle);
+    int32_t game = call_ii_i(m, "core_game_new", size, seed);
+    // Re-pack as 32-bit unsigned in a 64-bit jlong so the Kotlin side gets a
+    // non-sign-extended value (some WASM pointers are > 0x80000000).
+    return static_cast<jlong>(static_cast<uint32_t>(game));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeGameDrop(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game) {
+    call_i_v(mod(handle), "core_game_drop", game32(game));
+}
+
+// ===== Maze accessors ====================================================
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeMazeSize(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game) {
+    return call_i_i(mod(handle), "core_maze_size", game32(game));
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeMazeStart(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    jint v[2] = {
+        call_i_i(m, "core_maze_start_x", g),
+        call_i_i(m, "core_maze_start_y", g),
+    };
+    jintArray arr = env->NewIntArray(2);
+    env->SetIntArrayRegion(arr, 0, 2, v);
+    return arr;
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeMazeGoal(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    jint v[2] = {
+        call_i_i(m, "core_maze_goal_x", g),
+        call_i_i(m, "core_maze_goal_y", g),
+    };
+    jintArray arr = env->NewIntArray(2);
+    env->SetIntArrayRegion(arr, 0, 2, v);
+    return arr;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeMazeWalls(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    int32_t offset = call_i_i(m, "core_maze_walls_ptr", g);
+    int32_t len    = call_i_i(m, "core_maze_walls_len", g);
+    if (offset <= 0 || len <= 0) return env->NewByteArray(0);
+    void* host = wasm_runtime_addr_app_to_native(m->instance, offset);
+    if (!host) return env->NewByteArray(0);
+    jbyteArray arr = env->NewByteArray(len);
+    env->SetByteArrayRegion(arr, 0, len, reinterpret_cast<const jbyte*>(host));
+    return arr;
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeMazeHash(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    int32_t out = call_i_i(m, "core_alloc", 32);
+    if (out <= 0) return env->NewByteArray(0);
+    call_ii_v(m, "core_maze_hash", g, out);
+    void* host = wasm_runtime_addr_app_to_native(m->instance, out);
+    jbyteArray arr = env->NewByteArray(32);
+    if (host) env->SetByteArrayRegion(arr, 0, 32, reinterpret_cast<const jbyte*>(host));
+    call_ii_v(m, "core_free", out, 32);
+    return arr;
+}
+
+// ===== Step + control ====================================================
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeStep(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game, jint dtMs) {
+    return call_ii_i(mod(handle), "core_step", game32(game), dtMs);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeQueueDirection(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game, jint dir) {
+    call_ii_v(mod(handle), "core_queue_direction", game32(game), dir);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativePlayerRender(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    jfloat v[2] = {
+        call_i_f(m, "core_player_render_x", g),
+        call_i_f(m, "core_player_render_y", g),
+    };
+    jfloatArray arr = env->NewFloatArray(2);
+    env->SetFloatArrayRegion(arr, 0, 2, v);
+    return arr;
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativePlayerCell(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    jint v[2] = {
+        call_i_i(m, "core_player_cell_x", g),
+        call_i_i(m, "core_player_cell_y", g),
+    };
+    jintArray arr = env->NewIntArray(2);
+    env->SetIntArrayRegion(arr, 0, 2, v);
+    return arr;
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeVisited(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    int32_t len = call_i_i(m, "core_visited_len", g);
+    if (len <= 0) return env->NewIntArray(0);
+
+    int32_t out = call_i_i(m, "core_alloc", len * 4);
+    if (out <= 0) return env->NewIntArray(0);
+    call_ii_v(m, "core_visited_copy", g, out);
+
+    void* host = wasm_runtime_addr_app_to_native(m->instance, out);
+    jintArray arr = env->NewIntArray(len);
+    // Visited cells are written by Rust as little-endian u32s. arm64 is also
+    // LE, so we can SetIntArrayRegion directly. If we ever target a BE host
+    // this needs a byte-swap loop.
+    if (host) env->SetIntArrayRegion(arr, 0, len, reinterpret_cast<const jint*>(host));
+    call_ii_v(m, "core_free", out, len * 4);
+    return arr;
+}

@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- The puppet HTTP server only binds 127.0.0.1; no INTERNET permission
-         is needed because it doesn't make outbound calls. Localhost binding
-         is exempt from cleartext-traffic restrictions on modern Android. -->
+    <!-- The puppet HTTP server binds only 127.0.0.1, but Android's sandbox
+         still requires INTERNET to create *any* socket — including
+         listening sockets on localhost. Without this permission Ktor
+         throws "java.net.SocketException: Operation not permitted" at
+         server start. Cleartext is fine for localhost traffic. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
