@@ -91,12 +91,18 @@ body {
 
 #stage {
   position: relative;
-  display: grid;
-  place-items: center;
   overflow: hidden;
 }
 
+/* The canvas must be sized by CSS, not by its width/height attributes —
+ * fitMetrics() writes those to set the backing store, and if CSS doesn't pin
+ * the box the canvas grows to its backing-store size, which on next call
+ * grows the backing store again. Mobile Chrome OOMs after 2–3 frames. */
 #maze {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: block;
   touch-action: none;
   background: transparent;

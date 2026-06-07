@@ -9,18 +9,30 @@ const DOT_RED = "#c83b3b";
 const GOAL_BLUE = "#2f6fb8";
 const TRAIL_BLUE = "#7896c2";
 
+/**
+ * A Romanian-style "caiet de matematică" page: cream paper, a faint blue
+ * SQUARE grid (~5mm squares), and a red left-margin rule. The grid is the
+ * defining feature of a math notebook — ruled (horizontal-only) paper would
+ * be a writing notebook ("caiet cu linii"), which is the wrong genre for
+ * this game.
+ */
 function drawPaper(ctx: CanvasRenderingContext2D, m: SkinMetrics) {
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, m.width, m.height);
 
+  // Square grid — same spacing on both axes so the squares are square.
+  const spacing = 22;
   ctx.strokeStyle = PAPER_LINE;
   ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.55;
-  const spacing = 28;
+  ctx.globalAlpha = 0.5;
   ctx.beginPath();
+  for (let x = spacing; x < m.width; x += spacing) {
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, m.height);
+  }
   for (let y = spacing; y < m.height; y += spacing) {
-    ctx.moveTo(0, y);
-    ctx.lineTo(m.width, y);
+    ctx.moveTo(0, y + 0.5);
+    ctx.lineTo(m.width, y + 0.5);
   }
   ctx.stroke();
   ctx.globalAlpha = 1;
