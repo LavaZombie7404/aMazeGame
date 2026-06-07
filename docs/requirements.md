@@ -47,14 +47,14 @@ Skins are pure data + a tiny set of pluggable drawing functions; they don't keep
 
 | Skin id           | Status      | Notes                                                                                     |
 |-------------------|-------------|-------------------------------------------------------------------------------------------|
-| `math-textbook`   | **[planned]** as a skin (currently the hard-coded default look) | Cream paper, ruled lines, red margin, hand-drawn pen walls, red-ink dot character, blue ringed goal. |
+| `math-textbook`   | **[done]**    | Cream paper, ruled lines, red margin, hand-drawn pen walls, red-ink dot character, blue ringed goal. Lives in `src/skins/math-textbook.ts`. |
 | `geometry-dash`   | **[future]**  | Neon palette, glow, pulsing beat, vibrant gradients. Will likely require the WASM layer.   |
 | (others)          | **[future]**  | Open list — anything that satisfies §4.1 qualifies.                                        |
 
 ### 4.3 Skin selection
 
-- The current skin is part of player preferences and persisted in SQLite (new column on `player`). **[planned]**
-- The player can switch skins from a menu without losing progress; the next render frame uses the new skin. **[planned]**
+- The current skin is part of player preferences and persisted in SQLite (`player.skin_id` column, migration v2). **[done]**
+- The player can switch skins from a settings menu (⚙ button in the HUD) without losing progress; the next render frame uses the new skin. The skin row is auto-hidden when only one skin is registered, so the dialog stays clean. **[done]**
 - A future "shop" / "unlocks" model is out of scope for now. **[future]**
 
 ## 5. Shape & marker library
@@ -72,17 +72,19 @@ A shape doesn't know what it's representing — the same shape can be used for t
 
 ### 5.2 What ships in the library (initial set)
 
-- `dot` (filled circle) — current character.
-- `ring` (stroked circle) — current goal (with the filled inner disc).
-- `square`, `diamond`, `triangle`, `star-5`, `flag`, `arrow`. **[planned]**
+All in `src/shapes/primitives.ts`, registered in `src/shapes/index.ts`:
+
+- `dot` (filled circle) — current character. **[done]**
+- `ring` (stroked circle, optional inner fill) — current goal. **[done]**
+- `square`, `diamond`, `triangle`, `star-5`, `flag`, `arrow`. **[done]**
 
 The library is **extensible at build time** for now: drop a new shape file into `src/shapes/`, register it, and any skin can reference it by name. A runtime / user-provided shape system is **[future]**.
 
 ### 5.3 Configurability
 
-- Every skin specifies which shape is used for character / start / goal.
-- A skin can override a shape's color and size without redefining the shape itself.
-- It must be possible to change the character/start/goal shape *without changing the skin* (e.g. for accessibility) via a player preference. **[planned]**
+- Every skin specifies which shape is used for character / start / goal. **[done]**
+- A skin can override a shape's color and size without redefining the shape itself (via `ShapeRef.style` and `sizeFactor`). **[done]**
+- The player can change the character / start / goal shape *without changing the skin* (e.g. for accessibility) via the same settings dialog as skin selection. Overrides persist in SQLite (`player.character_shape`, `start_shape`, `goal_shape`); a slot left as "skin default" stores `NULL`. **[done]**
 
 ## 6. Gameplay
 
@@ -93,13 +95,13 @@ The library is **extensible at build time** for now: drop a new shape file into 
 
 ### 6.0 Maze size & difficulty cadence
 
-To keep the game from grinding the player down with a streak of huge mazes, sizes alternate between a **simple** and a **complex** bucket from one round to the next. **[planned — code still uses the old `[6, 12]` range.]**
+To keep the game from grinding the player down with a streak of huge mazes, sizes alternate between a **simple** and a **complex** bucket from one round to the next. **[done]**
 
-- **Simple bucket:** size randomly chosen in `[12×12, 18×18]`.
-- **Complex bucket:** size randomly chosen in `[24×24, 30×30]`.
-- Sizes `19×19` through `23×23` are intentionally unused — the gap is what makes the cadence feel like a breather, not just "slightly easier".
-- **Cadence:** the first round of a new player is **simple**; every subsequent round flips the bucket. The parity is derived from `player.mazes_completed` so it survives reloads (`even → simple, odd → complex`).
-- The bucket and the chosen size are recorded in `completed_mazes` alongside the existing fields so we can analyse difficulty curves later. **[planned]**
+- **Simple bucket:** size randomly chosen in `[12×12, 18×18]`. **[done]**
+- **Complex bucket:** size randomly chosen in `[24×24, 30×30]`. **[done]**
+- Sizes `19×19` through `23×23` are intentionally unused — the gap is what makes the cadence feel like a breather, not just "slightly easier". **[done]**
+- **Cadence:** the first round of a new player is **simple**; every subsequent round flips the bucket. The parity is derived from `player.mazes_completed` so it survives reloads (`even → simple, odd → complex`). **[done]**
+- The bucket is recorded on every row of `completed_mazes` (`bucket` column, migration v2) so we can analyse difficulty curves later. **[done]**
 
 A round's bucket overrides any single-round "random size" intuition — the randomness is *within* the bucket, not across both.
 
@@ -119,11 +121,11 @@ A round's bucket overrides any single-round "random size" intuition — the rand
 
 The character leaves a **trail** behind it showing the path it has walked through the current maze.
 
-- The trail is rendered between the start cell and the character's current position, along the cells the character has actually traversed (not the optimal path). **[planned]**
-- Backtracking through a cell does **not** add a second layer of trail — once a cell is marked as visited, additional passes do not change its rendering. **[planned]**
-- The trail resets when a new maze begins. It does **not** persist across mazes. **[planned]**
-- The exact visual (color, width, dotted vs solid, glow, etc.) is **owned by the active skin** (§4.1, `trail` field). **[planned]**
-- The trail is purely decorative — it doesn't affect movement, collision, or scoring. **[planned]**
+- The trail is rendered along the cells the character has actually traversed (not the optimal path). Implementation: the renderer walks the maze and draws `skin.trail` strokes between pairs of adjacent visited cells that share an open passage. **[done]**
+- Backtracking through a cell does **not** add a second layer of trail — `MovementState.visited` is a `Set<cellIndex>`, so re-entering a cell is a no-op. **[done]**
+- The trail resets when a new maze begins (`createMovementState` allocates a fresh `visited` set). It does **not** persist across mazes. **[done]**
+- The exact visual (color, width, dotted vs solid, glow, etc.) is **owned by the active skin** (§4.1, `trail` field). The math-textbook skin uses a dotted soft-blue stroke at 55% alpha. **[done]**
+- The trail is purely decorative — it doesn't affect movement, collision, or scoring. **[done]**
 
 ## 7. Scoring
 
