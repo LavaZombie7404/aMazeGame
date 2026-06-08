@@ -58,7 +58,15 @@ pub extern "C" fn core_free(ptr: *mut u8, n: u32) {
 
 #[no_mangle]
 pub extern "C" fn core_game_new(size: u32, seed: u32) -> *mut Game {
-    let maze = maze::generate(size, seed);
+    core_game_new_ext(size, seed, 0)
+}
+
+/// Like `core_game_new` but `weave != 0` opts the freshly-generated maze
+/// into the weave/bridges post-process (some straight corridors become
+/// bridges, where the perpendicular axis passes under without connecting).
+#[no_mangle]
+pub extern "C" fn core_game_new_ext(size: u32, seed: u32, weave: u32) -> *mut Game {
+    let maze = maze::generate_with(size, seed, weave != 0);
     let movement = MovementState::new(&maze);
     let last_hash = maze::hash(&maze);
     Box::into_raw(Box::new(Game { maze, movement, last_hash }))

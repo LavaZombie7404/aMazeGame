@@ -23,6 +23,7 @@ export interface PlayerRecord {
   autoMode: boolean;
   currentStreak: number;
   bestStreak: number;
+  weaveMazes: boolean;
 }
 
 let SQL: SqlJsStatic | null = null;
@@ -126,6 +127,11 @@ const migrations: Array<(db: Database) => void> = [
     db.run(`ALTER TABLE player ADD COLUMN current_streak INTEGER NOT NULL DEFAULT 0`);
     db.run(`ALTER TABLE player ADD COLUMN best_streak INTEGER NOT NULL DEFAULT 0`);
   },
+  // v8 — opt-in weave/bridge mazes (some straight corridors become
+  // bridges where a perpendicular passage crosses under).
+  (db) => {
+    db.run(`ALTER TABLE player ADD COLUMN weave_mazes INTEGER NOT NULL DEFAULT 0`);
+  },
 ];
 
 function migrate(db: Database): void {
@@ -158,7 +164,8 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
             character_shape, start_shape, goal_shape,
             legacy_movement, speed_multiplier,
             character_color, start_color, goal_color,
-            auto_mode, current_streak, best_streak
+            auto_mode, current_streak, best_streak,
+            weave_mazes
        FROM player WHERE id = 1`,
   );
   if (res.length === 0 || res[0]!.values.length === 0) return null;
@@ -178,6 +185,7 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
     autoMode: Number(row[11]) !== 0,
     currentStreak: Number(row[12]),
     bestStreak: Number(row[13]),
+    weaveMazes: Number(row[14]) !== 0,
   };
 }
 
@@ -238,6 +246,12 @@ export async function incrementStreak(): Promise<{ current: number; best: number
 export async function resetStreak(): Promise<void> {
   const db = await getDb();
   db.run(`UPDATE player SET current_streak = 0 WHERE id = 1`);
+  await persist();
+}
+
+export async function setWeaveMazes(value: boolean): Promise<void> {
+  const db = await getDb();
+  db.run(`UPDATE player SET weave_mazes = ? WHERE id = 1`, [value ? 1 : 0]);
   await persist();
 }
 

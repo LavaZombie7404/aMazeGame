@@ -70,6 +70,7 @@ fun MainScreen(game: GameRuntime) {
             legacyMovement = player.legacyMovement,
             speedMultiplier = player.speedMultiplier,
             autoMode = player.autoMode,
+            weaveMazes = player.weaveMazes,
             onSkinChange = { game.setSkin(it) },
             onShapeChange = { slot: PlayerStore.ShapeSlot, name: String? ->
                 game.setShapeOverride(slot, name)
@@ -80,6 +81,7 @@ fun MainScreen(game: GameRuntime) {
             onLegacyMovementChange = { game.setLegacyMovement(it) },
             onSpeedMultiplierChange = { game.setSpeedMultiplier(it) },
             onAutoModeChange = { game.setAutoMode(it) },
+            onWeaveMazesChange = { game.setWeaveMazes(it) },
             onDismiss = { settingsOpen = false },
         )
     }

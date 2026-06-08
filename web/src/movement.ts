@@ -1,4 +1,4 @@
-import { cellIndex, hasWall, type Maze, N, E, S, W } from "./maze";
+import { cellIndex, hasWall, isBridge, type Maze, N, E, S, W } from "./maze";
 import type { Direction } from "./input";
 
 export const DIR_FROM_NAME: Record<Direction, number> = {
@@ -166,6 +166,11 @@ export function step(
       s.queuedDir = null;
       s.progress = 0;
       return { reachedGoal: true };
+    }
+
+    // Weave bridges: forced straight-through, no stopping or turning.
+    if (isBridge(maze, s.cellX, s.cellY)) {
+      continue;
     }
 
     const incoming: number = s.dir!;

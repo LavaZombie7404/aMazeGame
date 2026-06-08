@@ -1,4 +1,12 @@
-import { cellIndex, DIR_VEC, generateMaze, hasWall, hashMaze, type Maze } from "./maze";
+import {
+  cellIndex,
+  DIR_VEC,
+  generateMaze,
+  generateMazeWith,
+  hasWall,
+  hashMaze,
+  type Maze,
+} from "./maze";
 import { playGoalChime, playWhoosh } from "./sfx";
 import {
   fitMetrics,
@@ -28,6 +36,7 @@ import {
   setShapeOverride,
   setSkinId,
   setSpeedMultiplier,
+  setWeaveMazes,
   wasGeneratedThisSession,
   type DifficultyBucket,
   type PlayerRecord,
@@ -94,6 +103,9 @@ const goalColorReset = document.getElementById(
 const autoModeToggle = document.getElementById(
   "auto-mode-toggle",
 ) as HTMLInputElement;
+const weaveMazesToggle = document.getElementById(
+  "weave-mazes-toggle",
+) as HTMLInputElement;
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.5, 2, 3] as const;
 
@@ -105,6 +117,7 @@ let overrides: ShapeOverrides = { character: null, start: null, goal: null };
 let legacyMovement = false;
 let speedMultiplier = 1;
 let autoMode = false;
+let weaveMazes = false;
 /**
  * Precomputed shortest-path solution for the current maze.
  * `pathDir[cellIdx]` = direction to take from that cell to advance along
@@ -141,7 +154,7 @@ async function generateUniqueMaze(bucket: DifficultyBucket): Promise<Maze> {
     const sizeRand = mulberry32(randomSeed());
     const size = sizeForBucket(bucket, sizeRand);
     const seed = randomSeed();
-    const candidate = generateMaze(size, seed);
+    const candidate = generateMazeWith(size, seed, weaveMazes);
     const h = await hashMaze(candidate);
     if (wasGeneratedThisSession(h)) continue;
     if (await hasSeenMaze(h)) continue;
@@ -397,6 +410,7 @@ function populateSettings(p: PlayerRecord) {
   startColorInput.value = p.startColor ?? slotDefaultColor("start");
   goalColorInput.value = p.goalColor ?? slotDefaultColor("goal");
   autoModeToggle.checked = p.autoMode;
+  weaveMazesToggle.checked = p.weaveMazes;
 }
 
 async function onSettingsChanged() {
@@ -423,6 +437,12 @@ async function onSettingsChanged() {
     await setAutoMode(autoMode);
     resetAutoCache();
     applyAutoExtraWalls();
+  }
+  if (weaveMazesToggle.checked !== weaveMazes) {
+    weaveMazes = weaveMazesToggle.checked;
+    await setWeaveMazes(weaveMazes);
+    // The change takes effect on the next maze; no need to invalidate the
+    // current one (it'd be jarring mid-solve).
   }
   const nextSpeed = Number(speedSelect.value);
   if (Number.isFinite(nextSpeed) && nextSpeed !== speedMultiplier) {
@@ -514,6 +534,7 @@ async function boot() {
   legacyMovement = player.legacyMovement;
   speedMultiplier = player.speedMultiplier || 1;
   autoMode = player.autoMode;
+  weaveMazes = player.weaveMazes;
   refreshHud(player);
   await nextRound(player);
 

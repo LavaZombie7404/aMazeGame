@@ -83,6 +83,13 @@ class GameRuntime(context: Context) {
         applyExtraWalls()
     }
 
+    fun setWeaveMazes(value: Boolean) {
+        store.weaveMazes = value
+        _player.value = _player.value.copy(weaveMazes = value)
+        // Effective on the next maze; existing maze keeps its wall layout
+        // so we don't yank corridors out from under the player.
+    }
+
     private fun applyExtraWalls() {
         if (gamePtr == 0L) return
         if (_player.value.autoMode && pathExtraWalls.isNotEmpty()) {
@@ -113,7 +120,7 @@ class GameRuntime(context: Context) {
 
     fun nextRound(size: Int, seed: Int = Random.nextInt()) {
         if (gamePtr != 0L) bridge.gameDrop(gamePtr)
-        gamePtr = bridge.gameNew(size, seed)
+        gamePtr = bridge.gameNewExt(size, seed, _player.value.weaveMazes)
         // Per-game flag — re-apply on each new round.
         bridge.setLegacyMovement(gamePtr, _player.value.legacyMovement)
         // Precompute the shortest-path solution table + invisible-walls mask
@@ -280,6 +287,7 @@ class GameRuntime(context: Context) {
         autoMode = store.autoMode,
         currentStreak = store.currentStreak,
         bestStreak = store.bestStreak,
+        weaveMazes = store.weaveMazes,
     )
 
     private fun loadOverrides() = ShapeOverrides(
@@ -304,6 +312,7 @@ data class PlayerState(
     val autoMode: Boolean = false,
     val currentStreak: Int = 0,
     val bestStreak: Int = 0,
+    val weaveMazes: Boolean = false,
 )
 
 /**

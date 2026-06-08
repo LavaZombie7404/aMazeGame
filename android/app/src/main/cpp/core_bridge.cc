@@ -209,6 +209,25 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeGameNew(
     return static_cast<jlong>(static_cast<uint32_t>(game));
 }
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeGameNewExt(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle,
+    jint size, jint seed, jint weave) {
+    auto* m = mod(handle);
+    wasm_function_inst_t f = fn(m, "core_game_new_ext");
+    if (!f) return 0;
+    wasm_val_t args[3] = {};
+    args[0].kind = WASM_I32; args[0].of.i32 = size;
+    args[1].kind = WASM_I32; args[1].of.i32 = seed;
+    args[2].kind = WASM_I32; args[2].of.i32 = weave;
+    wasm_val_t res = {}; res.kind = WASM_I32;
+    if (!wasm_runtime_call_wasm_a(m->exec_env, f, 1, &res, 3, args)) {
+        logEx(m, "core_game_new_ext");
+        return 0;
+    }
+    return static_cast<jlong>(static_cast<uint32_t>(res.of.i32));
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_lavazombie_amazegame_CoreBridge_nativeGameDrop(
     JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game) {

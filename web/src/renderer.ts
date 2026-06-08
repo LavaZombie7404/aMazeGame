@@ -1,4 +1,4 @@
-import { cellIndex, hasWall, type Maze, N, E, S, W } from "./maze";
+import { cellIndex, hasWall, isBridge, type Maze, N, E, S, W } from "./maze";
 import { mulberry32 } from "./rng";
 import { drawShapeRef, type ShapeRef } from "./shapes";
 import type { Skin, TrailStyle } from "./skins";
@@ -87,6 +87,39 @@ function drawWalls(
       }
     }
   }
+}
+
+/**
+ * Bridges are 4-walls-open cells, so wall rendering can't show them. Mark
+ * each bridge with a small "+" glyph at its centre in the skin's ink color
+ * so players can spot where they'll be forced straight-through.
+ */
+function drawBridges(
+  ctx: CanvasRenderingContext2D,
+  maze: Maze,
+  m: ViewMetrics,
+  skin: Skin,
+) {
+  ctx.save();
+  ctx.strokeStyle = skin.palette.ink;
+  ctx.lineWidth = Math.max(1.4, m.cell * 0.06);
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 0.45;
+  for (let y = 0; y < maze.size; y++) {
+    for (let x = 0; x < maze.size; x++) {
+      if (!isBridge(maze, x, y)) continue;
+      const cx = m.offsetX + (x + 0.5) * m.cell;
+      const cy = m.offsetY + (y + 0.5) * m.cell;
+      const r = m.cell * 0.22;
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy);
+      ctx.lineTo(cx + r, cy);
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx, cy + r);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 function applyTrailDash(ctx: CanvasRenderingContext2D, t: TrailStyle) {
@@ -190,6 +223,7 @@ export function render(
 
   skin.drawBackground(ctx, m, tMs);
   drawWalls(ctx, state.maze, m, skin, tMs);
+  drawBridges(ctx, state.maze, m, skin);
   drawTrail(ctx, state.maze, state.visited, m, skin.trail);
 
   // Start marker

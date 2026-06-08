@@ -43,6 +43,13 @@ class CoreBridge(private val context: Context) {
     fun gameNew(size: Int, seed: Int): Long =
         nativeGameNew(nativeHandle, size, seed)
 
+    /**
+     * Like [gameNew] but `weave = true` opts the freshly-generated maze
+     * into the weave/bridges post-process. Mirrors `core_game_new_ext`.
+     */
+    fun gameNewExt(size: Int, seed: Int, weave: Boolean): Long =
+        nativeGameNewExt(nativeHandle, size, seed, if (weave) 1 else 0)
+
     fun gameDrop(game: Long) {
         nativeGameDrop(nativeHandle, game)
     }
@@ -94,6 +101,7 @@ class CoreBridge(private val context: Context) {
     private external fun nativeAbiVersion(handle: Long): Int
 
     private external fun nativeGameNew(handle: Long, size: Int, seed: Int): Long
+    private external fun nativeGameNewExt(handle: Long, size: Int, seed: Int, weave: Int): Long
     private external fun nativeGameDrop(handle: Long, game: Long)
 
     private external fun nativeMazeSize(handle: Long, game: Long): Int

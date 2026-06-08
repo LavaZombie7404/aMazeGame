@@ -114,6 +114,31 @@ fun MazeCanvas(game: GameRuntime, modifier: Modifier = Modifier) {
                 }
             }
 
+            // Bridge markers — small "+" glyph at every weave cell so the
+            // player can tell where they'll be forced straight-through.
+            val bridgeStrokeWidth = max(1.4f, cell * 0.06f)
+            for (y in 0 until s.mazeSize) {
+                for (x in 0 until s.mazeSize) {
+                    val mask = s.walls[y * s.mazeSize + x].toInt() and 0xff
+                    if (mask and 0b00010000 == 0) continue
+                    val cx = offsetX + (x + 0.5f) * cell
+                    val cy = offsetY + (y + 0.5f) * cell
+                    val r = cell * 0.22f
+                    drawLine(
+                        skin.palette.ink.copy(alpha = 0.45f),
+                        Offset(cx - r, cy),
+                        Offset(cx + r, cy),
+                        strokeWidth = bridgeStrokeWidth,
+                    )
+                    drawLine(
+                        skin.palette.ink.copy(alpha = 0.45f),
+                        Offset(cx, cy - r),
+                        Offset(cx, cy + r),
+                        strokeWidth = bridgeStrokeWidth,
+                    )
+                }
+            }
+
             // start
             val startCenter = Offset(offsetX + (s.startX + 0.5f) * cell, offsetY + (s.startY + 0.5f) * cell)
             drawShape(overrides.apply(PlayerStore.ShapeSlot.Start, skin.start), startCenter, cell)

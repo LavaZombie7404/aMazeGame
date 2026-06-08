@@ -47,6 +47,10 @@ class PlayerStore(context: Context) {
         get() = sp.getInt(KEY_BEST_STREAK, 0)
         set(value) { sp.edit().putInt(KEY_BEST_STREAK, value).apply() }
 
+    var weaveMazes: Boolean
+        get() = sp.getBoolean(KEY_WEAVE_MAZES, false)
+        set(value) { sp.edit().putBoolean(KEY_WEAVE_MAZES, value).apply() }
+
     fun shapeOverride(slot: ShapeSlot): String? = sp.getString(slot.key, null)
     fun setShapeOverride(slot: ShapeSlot, name: String?) {
         sp.edit().apply {
@@ -82,5 +86,6 @@ class PlayerStore(context: Context) {
         private const val KEY_AUTO_MODE = "auto_mode"
         private const val KEY_CURRENT_STREAK = "current_streak"
         private const val KEY_BEST_STREAK = "best_streak"
+        private const val KEY_WEAVE_MAZES = "weave_mazes"
     }
 }

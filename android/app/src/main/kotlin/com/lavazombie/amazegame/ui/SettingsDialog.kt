@@ -83,12 +83,14 @@ fun SettingsDialog(
     legacyMovement: Boolean,
     speedMultiplier: Float,
     autoMode: Boolean,
+    weaveMazes: Boolean,
     onSkinChange: (String) -> Unit,
     onShapeChange: (PlayerStore.ShapeSlot, String?) -> Unit,
     onColorChange: (PlayerStore.ShapeSlot, String?) -> Unit,
     onLegacyMovementChange: (Boolean) -> Unit,
     onSpeedMultiplierChange: (Float) -> Unit,
     onAutoModeChange: (Boolean) -> Unit,
+    onWeaveMazesChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val skins = listSkins()
@@ -148,6 +150,10 @@ fun SettingsDialog(
                     enabled = autoMode,
                     onChange = onAutoModeChange,
                 )
+                WeaveMazesToggle(
+                    enabled = weaveMazes,
+                    onChange = onWeaveMazesChange,
+                )
                 SpeedPicker(
                     current = speedMultiplier,
                     onChange = onSpeedMultiplierChange,
@@ -172,6 +178,28 @@ private fun AutoModeToggle(enabled: Boolean, onChange: (Boolean) -> Unit) {
             )
             Text(
                 "Plays itself; mazes solved doesn't go up",
+                fontSize = 11.sp,
+            )
+        }
+        Switch(checked = enabled, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun WeaveMazesToggle(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Weave mazes",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Some cells become bridges; corridors cross over",
                 fontSize = 11.sp,
             )
         }

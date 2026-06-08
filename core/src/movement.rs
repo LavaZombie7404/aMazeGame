@@ -1,4 +1,4 @@
-use crate::maze::{cell_index, has_wall, Maze};
+use crate::maze::{cell_index, has_wall, is_bridge, Maze};
 use std::collections::BTreeSet;
 
 // Direction constants are exposed for clarity; the actual wall masks use
@@ -135,6 +135,12 @@ pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
             s.queued_dir = -1;
             s.progress = 0.0;
             return StepResult { reached_goal: true };
+        }
+
+        // Weave bridges: passing across forces same-axis exit. No stopping,
+        // no turning, no queuedDir consumption.
+        if is_bridge(&maze.walls, maze.size, s.cell_x, s.cell_y) {
+            continue;
         }
 
         // Default: auto-route through any single-exit cell; only stop at
