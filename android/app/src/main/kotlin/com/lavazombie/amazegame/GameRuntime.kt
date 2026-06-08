@@ -23,8 +23,12 @@ class GameRuntime(context: Context) {
     // Precomputed shortest-path solution for the current maze.
     // pathDir[cellIdx] = direction to take from that cell to advance toward
     // the goal along the BFS shortest path. -1 for cells off the path.
+    // pathExtraWalls[cellIdx] = wall bits for every direction *not* on the
+    // path — pushed into the core's `extra_walls` overlay when auto is on,
+    // cleared when off.
     private var autoSize: Int = 0
     private var pathDir: IntArray = IntArray(0)
+    private var pathExtraWalls: ByteArray = ByteArray(0)
 
     private val _state = MutableStateFlow(GameState.EMPTY)
     val state: StateFlow<GameState> = _state
@@ -76,6 +80,16 @@ class GameRuntime(context: Context) {
     fun setAutoMode(value: Boolean) {
         store.autoMode = value
         _player.value = _player.value.copy(autoMode = value)
+        applyExtraWalls()
+    }
+
+    private fun applyExtraWalls() {
+        if (gamePtr == 0L) return
+        if (_player.value.autoMode && pathExtraWalls.isNotEmpty()) {
+            bridge.setExtraWalls(gamePtr, pathExtraWalls)
+        } else {
+            bridge.setExtraWalls(gamePtr, null)
+        }
     }
 
     fun reset() {
@@ -87,13 +101,17 @@ class GameRuntime(context: Context) {
         gamePtr = bridge.gameNew(size, seed)
         // Per-game flag — re-apply on each new round.
         bridge.setLegacyMovement(gamePtr, _player.value.legacyMovement)
-        // Precompute the shortest-path solution table for the auto-solver.
+        // Precompute the shortest-path solution table + invisible-walls mask
+        // for the auto-solver.
         val walls = bridge.mazeWalls(gamePtr)
         val mSize = bridge.mazeSize(gamePtr)
         val start = bridge.mazeStart(gamePtr)
         val goal = bridge.mazeGoal(gamePtr)
         autoSize = mSize
-        pathDir = computePathDir(walls, mSize, start[0], start[1], goal[0], goal[1])
+        val solution = computePathSolution(walls, mSize, start[0], start[1], goal[0], goal[1])
+        pathDir = solution.first
+        pathExtraWalls = solution.second
+        applyExtraWalls()
         publish()
     }
 
@@ -130,19 +148,28 @@ class GameRuntime(context: Context) {
     }
 
     /**
-     * BFS start → goal, then walk back filling in the per-cell next-step
-     * direction along the shortest path. Returns an IntArray of size N²
-     * with `dir` for cells on the path and `-1` for cells off it.
+     * BFS start → goal, then walk back. Returns
+     *   `first`  = IntArray of size N² where path cells hold the direction
+     *              to the next cell on the shortest path, and off-path cells
+     *              hold -1.
+     *   `second` = ByteArray of size N² holding a wall mask whose bits are
+     *              set for every direction *not* on the path. Pushed into
+     *              the core's `extra_walls` overlay so the walker is locked
+     *              onto the path without altering the rendered maze.
      */
-    private fun computePathDir(
+    private fun computePathSolution(
         walls: ByteArray, size: Int,
         startX: Int, startY: Int,
         goalX: Int, goalY: Int,
-    ): IntArray {
-        val out = IntArray(size * size) { -1 }
+    ): Pair<IntArray, ByteArray> {
+        val dirs = IntArray(size * size) { -1 }
+        val extra = ByteArray(size * size) { 0b1111.toByte() }
         val startIdx = startY * size + startX
         val goalIdx = goalY * size + goalX
-        if (startIdx == goalIdx) return out
+        if (startIdx == goalIdx) {
+            extra[startIdx] = 0
+            return dirs to extra
+        }
 
         val visited = BooleanArray(size * size)
         val parentDir = IntArray(size * size) { -1 }
@@ -173,7 +200,7 @@ class GameRuntime(context: Context) {
                 queue.addLast(nIdx)
             }
         }
-        if (!found) return out
+        if (!found) return dirs to extra
 
         var idx = goalIdx
         while (idx != startIdx) {
@@ -182,10 +209,15 @@ class GameRuntime(context: Context) {
             val px = (idx % size) - vx[dir]
             val py = (idx / size) - vy[dir]
             val pIdx = py * size + px
-            out[pIdx] = dir
+            dirs[pIdx] = dir
+            // Clear the forward-direction wall at the parent and the
+            // backward-direction wall at the child on the path edge.
+            extra[pIdx] = (extra[pIdx].toInt() and (1 shl dir).inv()).toByte()
+            val backDir = (dir + 2) % 4
+            extra[idx] = (extra[idx].toInt() and (1 shl backDir).inv()).toByte()
             idx = pIdx
         }
-        return out
+        return dirs to extra
     }
 
     fun queue(direction: Direction) {

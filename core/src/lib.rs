@@ -146,6 +146,22 @@ pub extern "C" fn core_set_legacy_movement(g: *mut Game, value: u32) {
     game.movement.legacy_movement = value != 0;
 }
 
+/// Install (or clear) an "invisible" wall overlay for collision decisions.
+/// `ptr` points to `len` bytes of wall masks, one byte per cell, same layout
+/// as the maze's primary wall mask. Pass len=0 (or a null ptr) to clear.
+/// Renderers never see this overlay — it's only consulted by the movement
+/// step and queue_direction. Additive export, ABI unchanged.
+#[no_mangle]
+pub extern "C" fn core_set_extra_walls(g: *mut Game, ptr: *const u8, len: u32) {
+    let game = unsafe { &mut *g };
+    if ptr.is_null() || len == 0 {
+        game.movement.extra_walls.clear();
+        return;
+    }
+    let slice = unsafe { std::slice::from_raw_parts(ptr, len as usize) };
+    game.movement.extra_walls = slice.to_vec();
+}
+
 #[no_mangle]
 pub extern "C" fn core_player_render_x(g: *const Game) -> f32 {
     unsafe { (*g).movement.render_x }

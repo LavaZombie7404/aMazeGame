@@ -106,6 +106,11 @@ let autoMode = false;
  * the BFS shortest path toward the goal. `-1` for cells not on the path.
  */
 let pathDir: Int8Array = new Int8Array(0);
+/**
+ * "Invisible" extra walls used in auto mode: all edges not on the solution
+ * path are sealed. Renderer ignores this; movement-collision uses it.
+ */
+let pathExtraWalls: Uint8Array = new Uint8Array(0);
 
 /** PRD §6.0 — alternate simple ↔ complex buckets across rounds. */
 function bucketFor(mazesCompleted: number): DifficultyBucket {
@@ -211,19 +216,28 @@ function overridesFromPlayer(p: PlayerRecord): ShapeOverrides {
 }
 
 /**
- * BFS from start to goal, then walk back filling in `pathDir[cellIdx]` =
- * direction from that cell to the next cell on the shortest path. Cells
- * that aren't on the path keep the sentinel `-1`. Computed once per maze.
+ * BFS from start to goal, then walk back. Fills:
+ *  - `pathDir[cellIdx]` — direction from that cell to the next on the
+ *    shortest path (or -1 if the cell is off the path).
+ *  - `extraWalls[cellIdx]` — wall mask that *closes every edge not on the
+ *    path*. Starts as 0b1111 (all walls) and clears one bit per path edge.
+ *    Used by auto mode to seal off side branches without changing what the
+ *    renderer draws.
  */
-function computePathDir(m: Maze): Int8Array {
+function computePathSolution(
+  m: Maze,
+): { pathDir: Int8Array; extraWalls: Uint8Array } {
   const n = m.size;
-  const out = new Int8Array(n * n).fill(-1);
+  const pathDir = new Int8Array(n * n).fill(-1);
+  const extraWalls = new Uint8Array(n * n).fill(0b1111);
   const visited = new Uint8Array(n * n);
   const parentDir = new Int8Array(n * n).fill(-1);
   const startIdx = cellIndex(n, m.start.x, m.start.y);
   const goalIdx = cellIndex(n, m.goal.x, m.goal.y);
-  if (startIdx === goalIdx) return out;
-  // Simple ring-buffer-free FIFO using an index pointer to avoid O(n) shifts.
+  if (startIdx === goalIdx) {
+    extraWalls[startIdx] = 0;
+    return { pathDir, extraWalls };
+  }
   const queue: number[] = [startIdx];
   let head = 0;
   visited[startIdx] = 1;
@@ -249,7 +263,7 @@ function computePathDir(m: Maze): Int8Array {
       queue.push(nIdx);
     }
   }
-  if (!found) return out;
+  if (!found) return { pathDir, extraWalls };
   let idx = goalIdx;
   while (idx !== startIdx) {
     const dir = parentDir[idx]!;
@@ -258,14 +272,33 @@ function computePathDir(m: Maze): Int8Array {
     const px = (idx % n) - vx;
     const py = ((idx - (idx % n)) / n) - vy;
     const pIdx = cellIndex(n, px, py);
-    out[pIdx] = dir;
+    pathDir[pIdx] = dir;
+    extraWalls[pIdx] &= ~(1 << dir);
+    const backDir = (dir + 2) % 4;
+    extraWalls[idx] &= ~(1 << backDir);
     idx = pIdx;
   }
-  return out;
+  return { pathDir, extraWalls };
 }
 
 function resetAutoCache() {
   pathDir = new Int8Array(0);
+  pathExtraWalls = new Uint8Array(0);
+}
+
+/** Push (or clear) the auto-mode extra walls into the live movement state. */
+function applyAutoExtraWalls() {
+  if (!movement) return;
+  if (autoMode) {
+    if (pathExtraWalls.length === 0) {
+      const sol = computePathSolution(maze);
+      pathDir = sol.pathDir;
+      pathExtraWalls = sol.extraWalls;
+    }
+    movement.extraWalls = pathExtraWalls;
+  } else {
+    movement.extraWalls = new Uint8Array(0);
+  }
 }
 
 /** Skin's default color for a slot (used when no override is stored). */
@@ -362,6 +395,7 @@ async function onSettingsChanged() {
     autoMode = autoModeToggle.checked;
     await setAutoMode(autoMode);
     resetAutoCache();
+    applyAutoExtraWalls();
   }
   const nextSpeed = Number(speedSelect.value);
   if (Number.isFinite(nextSpeed) && nextSpeed !== speedMultiplier) {
@@ -394,7 +428,12 @@ function frame(now: number) {
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
     if (autoMode) {
-      if (pathDir.length === 0) pathDir = computePathDir(maze);
+      if (pathDir.length === 0) {
+        const sol = computePathSolution(maze);
+        pathDir = sol.pathDir;
+        pathExtraWalls = sol.extraWalls;
+        movement.extraWalls = pathExtraWalls;
+      }
       const idx = cellIndex(maze.size, movement.cellX, movement.cellY);
       const d = pathDir[idx]!;
       if (d >= 0) queueDirection(maze, movement, d);

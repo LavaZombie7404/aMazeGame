@@ -31,6 +31,11 @@ pub struct MovementState {
     /// usual decision cells. Straight pass-through still auto-routes. Mirrors
     /// the `legacy_movement` option on the web side.
     pub legacy_movement: bool,
+    /// Optional extra wall mask, OR'd with `maze.walls` for movement-collision
+    /// decisions. Empty (len 0) when no overlay is active. Renderers never
+    /// see this — used by auto mode to seal every edge except the solution
+    /// path, so the walker can't detour through side branches.
+    pub extra_walls: Vec<u8>,
 }
 
 impl MovementState {
@@ -47,12 +52,28 @@ impl MovementState {
             progress: 0.0,
             visited,
             legacy_movement: false,
+            extra_walls: Vec::new(),
         }
     }
 }
 
 pub fn can_move(maze: &Maze, x: u32, y: u32, dir: u8) -> bool {
     !has_wall(&maze.walls, maze.size, x, y, dir)
+}
+
+/// `can_move` but also honours an optional overlay wall mask on the state.
+/// Used by the auto-solver to lock the dot onto the solution path while the
+/// rendered maze stays intact.
+fn can_move_ext(maze: &Maze, s: &MovementState, x: u32, y: u32, dir: u8) -> bool {
+    if has_wall(&maze.walls, maze.size, x, y, dir) {
+        return false;
+    }
+    if !s.extra_walls.is_empty()
+        && has_wall(&s.extra_walls, maze.size, x, y, dir)
+    {
+        return false;
+    }
+    true
 }
 
 /// Decision cell = junction, dead-end, goal, or anywhere the player can't
@@ -89,7 +110,7 @@ pub struct StepResult {
 
 pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
     if s.dir < 0 {
-        if s.queued_dir >= 0 && can_move(maze, s.cell_x, s.cell_y, s.queued_dir as u8) {
+        if s.queued_dir >= 0 && can_move_ext(maze, s, s.cell_x, s.cell_y, s.queued_dir as u8) {
             s.dir = s.queued_dir;
             s.queued_dir = -1;
         } else {
@@ -126,7 +147,7 @@ pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
             if d == back {
                 continue;
             }
-            if can_move(maze, s.cell_x, s.cell_y, d as u8) {
+            if can_move_ext(maze, s, s.cell_x, s.cell_y, d as u8) {
                 exit_count += 1;
                 if exit_count == 1 {
                     single_exit = d;
@@ -140,7 +161,7 @@ pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
         } else if exit_count == 1 && (!s.legacy_movement || single_exit == incoming) {
             s.dir = single_exit;
         } else if s.queued_dir >= 0
-            && can_move(maze, s.cell_x, s.cell_y, s.queued_dir as u8)
+            && can_move_ext(maze, s, s.cell_x, s.cell_y, s.queued_dir as u8)
         {
             s.dir = s.queued_dir;
             s.queued_dir = -1;
@@ -160,7 +181,7 @@ pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
 }
 
 pub fn queue_direction(maze: &Maze, s: &mut MovementState, dir: u8) {
-    if s.dir < 0 && can_move(maze, s.cell_x, s.cell_y, dir) {
+    if s.dir < 0 && can_move_ext(maze, s, s.cell_x, s.cell_y, dir) {
         s.dir = dir as i32;
         s.queued_dir = -1;
         s.progress = 0.0;

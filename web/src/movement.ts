@@ -17,15 +17,24 @@ const VEC: Record<number, [number, number]> = {
 
 /**
  * Returns true if the player can move from (x,y) in the given direction
- * (i.e. there's no wall blocking that edge).
+ * (i.e. there's no wall blocking that edge). `extraWalls`, when non-empty,
+ * is OR'd with the maze's wall mask — used by the auto-solver to block
+ * every edge except those on the precomputed path, while leaving the
+ * rendered maze unchanged.
  */
 export function canMove(
   maze: Maze,
   x: number,
   y: number,
   dir: number,
+  extraWalls?: Uint8Array,
 ): boolean {
-  return !hasWall(maze, x, y, dir);
+  if (hasWall(maze, x, y, dir)) return false;
+  if (extraWalls && extraWalls.length > 0) {
+    const idx = cellIndex(maze.size, x, y);
+    if ((extraWalls[idx]! & (1 << dir)) !== 0) return false;
+  }
+  return true;
 }
 
 /**
@@ -39,11 +48,12 @@ export function openExits(
   x: number,
   y: number,
   excludeDir: number | null,
+  extraWalls?: Uint8Array,
 ): number[] {
   const exits: number[] = [];
   for (let d = 0; d < 4; d++) {
     if (d === excludeDir) continue;
-    if (canMove(maze, x, y, d)) exits.push(d);
+    if (canMove(maze, x, y, d, extraWalls)) exits.push(d);
   }
   return exits;
 }
@@ -83,6 +93,13 @@ export interface MovementState {
   // Cell-index set of cells the dot has occupied in this maze. Used for the
   // trail (PRD §6.2). Backtracking through a cell is a no-op on this set.
   visited: Set<number>;
+  /**
+   * Optional additional wall mask — OR'd with the maze's walls for
+   * movement-collision decisions only (the renderer never sees these).
+   * Used by auto mode to constrain the dot to the solution path. Empty
+   * (length 0) when no overlay is active.
+   */
+  extraWalls: Uint8Array;
 }
 
 export function createMovementState(maze: Maze): MovementState {
@@ -97,6 +114,7 @@ export function createMovementState(maze: Maze): MovementState {
     queuedDir: null,
     progress: 0,
     visited,
+    extraWalls: new Uint8Array(0),
   };
 }
 
@@ -124,7 +142,7 @@ export function step(
 ): StepResult {
   if (s.dir === null) {
     // Idle: see if a queued direction can be honoured.
-    if (s.queuedDir !== null && canMove(maze, s.cellX, s.cellY, s.queuedDir)) {
+    if (s.queuedDir !== null && canMove(maze, s.cellX, s.cellY, s.queuedDir, s.extraWalls)) {
       s.dir = s.queuedDir;
       s.queuedDir = null;
     } else {
@@ -152,7 +170,7 @@ export function step(
 
     const incoming: number = s.dir!;
     const back = (incoming + 2) % 4;
-    const exits = openExits(maze, s.cellX, s.cellY, back);
+    const exits = openExits(maze, s.cellX, s.cellY, back, s.extraWalls);
     if (exits.length === 0) {
       // Dead-end.
       s.dir = null;
@@ -167,7 +185,7 @@ export function step(
         s.dir = only;
       } else if (
         s.queuedDir !== null &&
-        canMove(maze, s.cellX, s.cellY, s.queuedDir)
+        canMove(maze, s.cellX, s.cellY, s.queuedDir, s.extraWalls)
       ) {
         s.dir = s.queuedDir;
         s.queuedDir = null;
@@ -178,7 +196,7 @@ export function step(
       }
     } else {
       // Real fork. Honour the queued direction if valid, otherwise stop.
-      if (s.queuedDir !== null && canMove(maze, s.cellX, s.cellY, s.queuedDir)) {
+      if (s.queuedDir !== null && canMove(maze, s.cellX, s.cellY, s.queuedDir, s.extraWalls)) {
         s.dir = s.queuedDir;
         s.queuedDir = null;
       } else {
@@ -204,7 +222,7 @@ export function queueDirection(
   dir: number,
 ): void {
   // If currently idle at a cell and this direction is valid, start immediately.
-  if (s.dir === null && canMove(maze, s.cellX, s.cellY, dir)) {
+  if (s.dir === null && canMove(maze, s.cellX, s.cellY, dir, s.extraWalls)) {
     s.dir = dir;
     s.queuedDir = null;
     s.progress = 0;

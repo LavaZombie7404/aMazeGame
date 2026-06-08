@@ -301,6 +301,48 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeSetLegacyMovement(
     call_ii_v(mod(handle), "core_set_legacy_movement", game32(game), value);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeSetExtraWalls(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game, jbyteArray walls) {
+    auto* m = mod(handle);
+    int32_t g = game32(game);
+    if (walls == nullptr) {
+        // Null array clears the overlay.
+        wasm_function_inst_t f = fn(m, "core_set_extra_walls");
+        if (!f) return;
+        wasm_val_t args[3] = {};
+        args[0].kind = WASM_I32; args[0].of.i32 = g;
+        args[1].kind = WASM_I32; args[1].of.i32 = 0;
+        args[2].kind = WASM_I32; args[2].of.i32 = 0;
+        if (!wasm_runtime_call_wasm_a(m->exec_env, f, 0, nullptr, 3, args)) {
+            logEx(m, "core_set_extra_walls");
+        }
+        return;
+    }
+    jsize len = env->GetArrayLength(walls);
+    if (len <= 0) return;
+    // Allocate a buffer inside WASM linear memory and copy the bytes in.
+    int32_t out = call_i_i(m, "core_alloc", len);
+    if (out <= 0) return;
+    void* host = wasm_runtime_addr_app_to_native(m->instance, out);
+    if (host) {
+        env->GetByteArrayRegion(walls, 0, len, reinterpret_cast<jbyte*>(host));
+    }
+    // Call core_set_extra_walls(g, ptr, len). The Rust side copies into its
+    // own Vec, so we can free the WASM allocation right after.
+    wasm_function_inst_t f = fn(m, "core_set_extra_walls");
+    if (f) {
+        wasm_val_t args[3] = {};
+        args[0].kind = WASM_I32; args[0].of.i32 = g;
+        args[1].kind = WASM_I32; args[1].of.i32 = out;
+        args[2].kind = WASM_I32; args[2].of.i32 = len;
+        if (!wasm_runtime_call_wasm_a(m->exec_env, f, 0, nullptr, 3, args)) {
+            logEx(m, "core_set_extra_walls");
+        }
+    }
+    call_ii_v(m, "core_free", out, len);
+}
+
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_lavazombie_amazegame_CoreBridge_nativePlayerRender(
     JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {
