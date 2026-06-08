@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Math-textbook paper colour, matches the in-game canvas. Used as the
+         adaptive-icon background so the logo sits on the same surface the
+         game uses. -->
+    <color name="ic_launcher_background">#F7F3E8</color>
+</resources>
