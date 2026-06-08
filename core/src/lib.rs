@@ -136,6 +136,16 @@ pub extern "C" fn core_queue_direction(g: *mut Game, dir: u32) {
     }
 }
 
+/// Toggle "stop at every corner" (legacy) movement on the current game.
+/// 0 = off (default, auto-route single-exit cells), non-zero = on.
+/// Additive export; ABI version is unchanged because callers that ignore
+/// this function still observe the default behaviour.
+#[no_mangle]
+pub extern "C" fn core_set_legacy_movement(g: *mut Game, value: u32) {
+    let game = unsafe { &mut *g };
+    game.movement.legacy_movement = value != 0;
+}
+
 #[no_mangle]
 pub extern "C" fn core_player_render_x(g: *const Game) -> f32 {
     unsafe { (*g).movement.render_x }

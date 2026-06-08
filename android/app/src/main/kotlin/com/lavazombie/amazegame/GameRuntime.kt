@@ -51,6 +51,12 @@ class GameRuntime(context: Context) {
         _player.value = _player.value.copy(overrides = loadOverrides())
     }
 
+    fun setLegacyMovement(value: Boolean) {
+        store.legacyMovement = value
+        _player.value = _player.value.copy(legacyMovement = value)
+        if (gamePtr != 0L) bridge.setLegacyMovement(gamePtr, value)
+    }
+
     fun reset() {
         nextRound(size = pickSize())
     }
@@ -58,6 +64,8 @@ class GameRuntime(context: Context) {
     fun nextRound(size: Int, seed: Int = Random.nextInt()) {
         if (gamePtr != 0L) bridge.gameDrop(gamePtr)
         gamePtr = bridge.gameNew(size, seed)
+        // Per-game flag — re-apply on each new round.
+        bridge.setLegacyMovement(gamePtr, _player.value.legacyMovement)
         publish()
     }
 
@@ -106,6 +114,7 @@ class GameRuntime(context: Context) {
         mazesCompleted = store.mazesCompleted,
         skin = getSkin(store.skinId.ifBlank { DEFAULT_SKIN_ID }),
         overrides = loadOverrides(),
+        legacyMovement = store.legacyMovement,
     )
 
     private fun loadOverrides() = ShapeOverrides(
@@ -122,6 +131,7 @@ data class PlayerState(
     val mazesCompleted: Int,
     val skin: Skin,
     val overrides: ShapeOverrides,
+    val legacyMovement: Boolean = false,
 )
 
 /**

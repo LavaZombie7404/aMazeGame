@@ -27,6 +27,10 @@ pub struct MovementState {
     pub queued_dir: i32, // -1 = none
     pub progress: f32,
     pub visited: BTreeSet<u32>, // cell indices
+    /// When true, stop at every forced turn ("corner") in addition to the
+    /// usual decision cells. Straight pass-through still auto-routes. Mirrors
+    /// the `legacy_movement` option on the web side.
+    pub legacy_movement: bool,
 }
 
 impl MovementState {
@@ -42,6 +46,7 @@ impl MovementState {
             queued_dir: -1,
             progress: 0.0,
             visited,
+            legacy_movement: false,
         }
     }
 }
@@ -111,9 +116,10 @@ pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
             return StepResult { reached_goal: true };
         }
 
-        // Auto-route through any single-exit cell; only stop at forks /
-        // dead-ends / goal.
-        let back = (s.dir + 2) % 4;
+        // Default: auto-route through any single-exit cell; only stop at
+        // forks / dead-ends / goal. Legacy: also stop at a forced turn.
+        let incoming = s.dir;
+        let back = (incoming + 2) % 4;
         let mut single_exit: i32 = -1;
         let mut exit_count = 0u32;
         for d in 0..4i32 {
@@ -131,7 +137,7 @@ pub fn step(maze: &Maze, s: &mut MovementState, dt: f32) -> StepResult {
             s.dir = -1;
             s.progress = 0.0;
             return StepResult { reached_goal: false };
-        } else if exit_count == 1 {
+        } else if exit_count == 1 && (!s.legacy_movement || single_exit == incoming) {
             s.dir = single_exit;
         } else if s.queued_dir >= 0
             && can_move(maze, s.cell_x, s.cell_y, s.queued_dir as u8)

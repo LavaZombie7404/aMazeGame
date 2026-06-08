@@ -27,6 +27,10 @@ class PlayerStore(context: Context) {
         get() = sp.getString(KEY_SKIN, null) ?: "math-textbook"
         set(value) { sp.edit().putString(KEY_SKIN, value).apply() }
 
+    var legacyMovement: Boolean
+        get() = sp.getBoolean(KEY_LEGACY_MOVEMENT, false)
+        set(value) { sp.edit().putBoolean(KEY_LEGACY_MOVEMENT, value).apply() }
+
     fun shapeOverride(slot: ShapeSlot): String? = sp.getString(slot.key, null)
     fun setShapeOverride(slot: ShapeSlot, name: String?) {
         sp.edit().apply {
@@ -50,5 +54,6 @@ class PlayerStore(context: Context) {
         private const val KEY_NAME = "player_name"
         private const val KEY_SCORE = "mazes_completed"
         private const val KEY_SKIN = "skin_id"
+        private const val KEY_LEGACY_MOVEMENT = "legacy_movement"
     }
 }

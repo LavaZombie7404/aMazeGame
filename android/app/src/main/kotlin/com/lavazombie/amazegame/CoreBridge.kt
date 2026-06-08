@@ -66,6 +66,10 @@ class CoreBridge(private val context: Context) {
         nativeQueueDirection(nativeHandle, game, dir)
     }
 
+    fun setLegacyMovement(game: Long, value: Boolean) {
+        nativeSetLegacyMovement(nativeHandle, game, if (value) 1 else 0)
+    }
+
     fun playerRender(game: Long): FloatArray =
         nativePlayerRender(nativeHandle, game)
 
@@ -91,6 +95,7 @@ class CoreBridge(private val context: Context) {
 
     private external fun nativeStep(handle: Long, game: Long, dtMs: Int): Int
     private external fun nativeQueueDirection(handle: Long, game: Long, dir: Int)
+    private external fun nativeSetLegacyMovement(handle: Long, game: Long, value: Int)
     private external fun nativePlayerRender(handle: Long, game: Long): FloatArray
     private external fun nativePlayerCell(handle: Long, game: Long): IntArray
     private external fun nativeVisited(handle: Long, game: Long): IntArray

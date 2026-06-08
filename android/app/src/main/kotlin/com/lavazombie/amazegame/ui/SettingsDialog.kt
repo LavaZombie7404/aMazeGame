@@ -2,6 +2,7 @@ package com.lavazombie.amazegame.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -9,8 +10,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +41,10 @@ fun SettingsDialog(
     characterOverride: String?,
     startOverride: String?,
     goalOverride: String?,
+    legacyMovement: Boolean,
     onSkinChange: (String) -> Unit,
     onShapeChange: (PlayerStore.ShapeSlot, String?) -> Unit,
+    onLegacyMovementChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val skins = listSkins()
@@ -73,9 +78,35 @@ fun SettingsDialog(
                     current = goalOverride,
                     onChange = { onShapeChange(PlayerStore.ShapeSlot.Goal, it) },
                 )
+                LegacyMovementToggle(
+                    enabled = legacyMovement,
+                    onChange = onLegacyMovementChange,
+                )
             }
         },
     )
+}
+
+@Composable
+private fun LegacyMovementToggle(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Stop at every corner",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Old movement: confirm every turn",
+                fontSize = 11.sp,
+            )
+        }
+        Switch(checked = enabled, onCheckedChange = onChange)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
