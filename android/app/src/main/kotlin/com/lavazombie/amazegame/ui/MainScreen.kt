@@ -29,8 +29,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -94,6 +96,7 @@ fun MainScreen(game: GameRuntime) {
                 currentStreak = player.currentStreak,
                 bestStreak = player.bestStreak,
                 onReset = { game.reset() },
+                onResetCurrentMaze = { game.resetCurrentMaze() },
                 onSettings = { settingsOpen = true },
                 onDaily = {
                     game.loadDailyMaze()
@@ -116,6 +119,7 @@ private fun Hud(
     currentStreak: Int,
     bestStreak: Int,
     onReset: () -> Unit,
+    onResetCurrentMaze: () -> Unit,
     onSettings: () -> Unit,
     onDaily: () -> Unit,
 ) {
@@ -145,7 +149,11 @@ private fun Hud(
         Row(verticalAlignment = Alignment.CenterVertically) {
             HudTextButton(label = "Daily", onClick = onDaily)
             Spacer(Modifier.width(6.dp))
-            HudTextButton(label = "Reset", onClick = onReset)
+            HudTextButton(
+                label = "Reset",
+                onClick = onReset,
+                onLongClick = onResetCurrentMaze,
+            )
             Spacer(Modifier.width(6.dp))
             HudTextButton(label = "Settings", onClick = onSettings)
         }
@@ -181,16 +189,25 @@ private fun Hud(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HudTextButton(label: String, onClick: () -> Unit) {
+private fun HudTextButton(
+    label: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
     Box(
         Modifier
-            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-            .border(
-                BorderStroke(1.5.dp, INK_SOFT),
-                androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-            )
-            .clickable(onClick = onClick)
+            .clip(shape)
+            .border(BorderStroke(1.5.dp, INK_SOFT), shape)
+            .let { mod ->
+                if (onLongClick != null) {
+                    mod.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                } else {
+                    mod.clickable(onClick = onClick)
+                }
+            }
             .padding(horizontal = 10.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {

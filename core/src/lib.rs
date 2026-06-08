@@ -154,6 +154,15 @@ pub extern "C" fn core_set_legacy_movement(g: *mut Game, value: u32) {
     game.movement.legacy_movement = value != 0;
 }
 
+/// Reset the dot to the maze's start cell with a fresh visited set, without
+/// regenerating the maze. Used by the "restart this maze" long-press
+/// gesture. Additive export.
+#[no_mangle]
+pub extern "C" fn core_reset_player(g: *mut Game) {
+    let game = unsafe { &mut *g };
+    game.movement = MovementState::new(&game.maze);
+}
+
 /// Install (or clear) an "invisible" wall overlay for collision decisions.
 /// `ptr` points to `len` bytes of wall masks, one byte per cell, same layout
 /// as the maze's primary wall mask. Pass len=0 (or a null ptr) to clear.

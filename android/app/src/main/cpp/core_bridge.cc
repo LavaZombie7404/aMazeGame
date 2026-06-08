@@ -315,6 +315,12 @@ Java_com_lavazombie_amazegame_CoreBridge_nativeQueueDirection(
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativeResetPlayer(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game) {
+    call_i_v(mod(handle), "core_reset_player", game32(game));
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_lavazombie_amazegame_CoreBridge_nativeSetLegacyMovement(
     JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game, jint value) {
     call_ii_v(mod(handle), "core_set_legacy_movement", game32(game), value);

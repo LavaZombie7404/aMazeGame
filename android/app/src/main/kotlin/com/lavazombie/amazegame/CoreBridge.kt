@@ -77,6 +77,11 @@ class CoreBridge(private val context: Context) {
         nativeSetLegacyMovement(nativeHandle, game, if (value) 1 else 0)
     }
 
+    /** Reset the dot to the maze's start cell without regenerating walls. */
+    fun resetPlayer(game: Long) {
+        nativeResetPlayer(nativeHandle, game)
+    }
+
     /**
      * Install an additional wall overlay for collision decisions only.
      * Renderers never see it — used by auto mode to seal everything but the
@@ -114,6 +119,7 @@ class CoreBridge(private val context: Context) {
     private external fun nativeQueueDirection(handle: Long, game: Long, dir: Int)
     private external fun nativeSetLegacyMovement(handle: Long, game: Long, value: Int)
     private external fun nativeSetExtraWalls(handle: Long, game: Long, walls: ByteArray?)
+    private external fun nativeResetPlayer(handle: Long, game: Long)
     private external fun nativePlayerRender(handle: Long, game: Long): FloatArray
     private external fun nativePlayerCell(handle: Long, game: Long): IntArray
     private external fun nativeVisited(handle: Long, game: Long): IntArray

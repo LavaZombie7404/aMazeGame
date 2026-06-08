@@ -107,6 +107,22 @@ class GameRuntime(context: Context) {
     }
 
     /**
+     * Long-press on Reset: put the dot back at the start of the *same*
+     * maze. Streak still breaks (otherwise it's a free do-over), and we
+     * re-apply per-game flags (legacy movement, auto extra-walls overlay)
+     * because resetting the movement state clears them on the Rust side.
+     */
+    fun resetCurrentMaze() {
+        if (gamePtr == 0L) return
+        store.currentStreak = 0
+        _player.value = _player.value.copy(currentStreak = 0)
+        bridge.resetPlayer(gamePtr)
+        bridge.setLegacyMovement(gamePtr, _player.value.legacyMovement)
+        applyExtraWalls()
+        publish()
+    }
+
+    /**
      * Today's UTC date as an integer seed (YYYYMMDD). Matches the web's
      * `dailySeed()` so the same maze ships across platforms.
      */

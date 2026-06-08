@@ -191,6 +191,21 @@ async function loadDailyMaze() {
   resize();
 }
 
+/**
+ * Long-press of the Reset button — put the dot back at start of the *same*
+ * maze with a fresh visited set. Streak still resets so a do-over can't
+ * farm easy mazes.
+ */
+async function resetCurrentMaze() {
+  if (!maze) return;
+  await resetStreak();
+  movement = createMovementState(maze);
+  resetAutoCache();
+  applyAutoExtraWalls();
+  const p = await getPlayer();
+  if (p) refreshHud(p);
+}
+
 function resize() {
   if (!maze) return;
   metrics = fitMetrics(canvas, maze.size);
@@ -545,10 +560,33 @@ async function boot() {
     },
   });
 
+  // Tap = new maze; long-press = restart the *current* maze with the dot
+  // back at the start. Both break the streak so a do-over can't farm it.
+  let resetLongPressTimer: number | null = null;
+  let resetLongTriggered = false;
+  const LONG_PRESS_MS = 600;
+  const cancelLongTimer = () => {
+    if (resetLongPressTimer !== null) {
+      clearTimeout(resetLongPressTimer);
+      resetLongPressTimer = null;
+    }
+  };
+  resetBtn.addEventListener("pointerdown", () => {
+    resetLongTriggered = false;
+    cancelLongTimer();
+    resetLongPressTimer = window.setTimeout(() => {
+      resetLongTriggered = true;
+      void resetCurrentMaze();
+    }, LONG_PRESS_MS);
+  });
+  resetBtn.addEventListener("pointerup", cancelLongTimer);
+  resetBtn.addEventListener("pointerleave", cancelLongTimer);
+  resetBtn.addEventListener("pointercancel", cancelLongTimer);
   resetBtn.addEventListener("click", async () => {
-    // Abandon the current maze and generate a new one. Skipping breaks the
-    // current streak. The skipped maze doesn't count toward the score and
-    // won't repeat this session.
+    if (resetLongTriggered) {
+      resetLongTriggered = false;
+      return;
+    }
     await resetStreak();
     const p = await getPlayer();
     if (p) {
