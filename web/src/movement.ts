@@ -110,8 +110,18 @@ export interface StepResult {
 /**
  * Advance the movement state by dt seconds. Returns true if the goal was
  * reached this step.
+ *
+ * `legacy` switches the stop rule. Default (false): only stop at real forks,
+ * dead-ends, or the goal — single-exit cells auto-route even on a forced
+ * turn. Legacy (true): also stop on a forced turn ("corner"), so the player
+ * confirms every direction change. Straight pass-through still auto-routes.
  */
-export function step(maze: Maze, s: MovementState, dt: number): StepResult {
+export function step(
+  maze: Maze,
+  s: MovementState,
+  dt: number,
+  legacy: boolean = false,
+): StepResult {
   if (s.dir === null) {
     // Idle: see if a queued direction can be honoured.
     if (s.queuedDir !== null && canMove(maze, s.cellX, s.cellY, s.queuedDir)) {
@@ -140,9 +150,8 @@ export function step(maze: Maze, s: MovementState, dt: number): StepResult {
       return { reachedGoal: true };
     }
 
-    // At a new cell — auto-route through any single-exit cell, only stop at
-    // forks / dead-ends / goal.
-    const back = (s.dir! + 2) % 4;
+    const incoming: number = s.dir!;
+    const back = (incoming + 2) % 4;
     const exits = openExits(maze, s.cellX, s.cellY, back);
     if (exits.length === 0) {
       // Dead-end.
@@ -150,8 +159,23 @@ export function step(maze: Maze, s: MovementState, dt: number): StepResult {
       s.progress = 0;
       return { reachedGoal: false };
     } else if (exits.length === 1) {
-      // Single forced path — auto-take it (might be a turn).
-      s.dir = exits[0]!;
+      const only = exits[0]!;
+      // Auto-route through a straight pass-through always. Auto-route through
+      // a forced turn only when legacy mode is off — in legacy mode the player
+      // has to confirm the corner.
+      if (!legacy || only === incoming) {
+        s.dir = only;
+      } else if (
+        s.queuedDir !== null &&
+        canMove(maze, s.cellX, s.cellY, s.queuedDir)
+      ) {
+        s.dir = s.queuedDir;
+        s.queuedDir = null;
+      } else {
+        s.dir = null;
+        s.progress = 0;
+        return { reachedGoal: false };
+      }
     } else {
       // Real fork. Honour the queued direction if valid, otherwise stop.
       if (s.queuedDir !== null && canMove(maze, s.cellX, s.cellY, s.queuedDir)) {

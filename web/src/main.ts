@@ -18,6 +18,7 @@ import {
   hasSeenMaze,
   markGenerated,
   recordCompletion,
+  setLegacyMovement,
   setPlayerName,
   setShapeOverride,
   setSkinId,
@@ -59,12 +60,16 @@ const startShapeSelect = document.getElementById(
 const goalShapeSelect = document.getElementById(
   "goal-shape-select",
 ) as HTMLSelectElement;
+const legacyMovementToggle = document.getElementById(
+  "legacy-movement-toggle",
+) as HTMLInputElement;
 
 let maze: Maze;
 let movement: MovementState;
 let metrics: ViewMetrics;
 let skin: Skin;
 let overrides: ShapeOverrides = { character: null, start: null, goal: null };
+let legacyMovement = false;
 
 /** PRD §6.0 — alternate simple ↔ complex buckets across rounds. */
 function bucketFor(mazesCompleted: number): DifficultyBucket {
@@ -195,6 +200,7 @@ function populateSettings(p: PlayerRecord) {
   populateShapeSelect(characterShapeSelect, p.characterOverride);
   populateShapeSelect(startShapeSelect, p.startOverride);
   populateShapeSelect(goalShapeSelect, p.goalOverride);
+  legacyMovementToggle.checked = p.legacyMovement;
 }
 
 async function onSettingsChanged() {
@@ -212,6 +218,10 @@ async function onSettingsChanged() {
   for (const [slot, el] of slotsToPersist) {
     await setShapeOverride(slot, el.value || null);
   }
+  if (legacyMovementToggle.checked !== legacyMovement) {
+    legacyMovement = legacyMovementToggle.checked;
+    await setLegacyMovement(legacyMovement);
+  }
   const p = await getPlayer();
   if (p) {
     overrides = overridesFromPlayer(p);
@@ -226,7 +236,7 @@ function frame(now: number) {
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
-    const res = step(maze, movement, dt);
+    const res = step(maze, movement, dt, legacyMovement);
     render(
       ctx,
       {
@@ -266,6 +276,7 @@ async function boot() {
   skin = getSkin(player.skinId);
   applySkinToDom(skin);
   overrides = overridesFromPlayer(player);
+  legacyMovement = player.legacyMovement;
   refreshHud(player);
   await nextRound(player);
 

@@ -131,6 +131,7 @@ A round's bucket overrides any single-round "random size" intuition — the rand
 - The character moves **autonomously** in its current direction. **[done]**
 - It keeps going through straight corridors without input. **[done]**
 - It stops at **decision cells**: junctions (≥ 2 exits ignoring the back direction), dead-ends, the goal, or any turn the player did not pre-queue. **[done]**
+- Default behavior auto-routes through single-exit cells, including forced turns. The settings dialog exposes a **"Stop at every corner (old movement)"** toggle that switches to the stricter rule: every forced turn becomes a decision cell too — straight pass-through still auto-routes. Stored per-player as `player.legacy_movement` (migration v3). **[done — web]**
 - Player inputs accepted (all set the next direction):
   - **Touch swipe** up / down / left / right. A swipe that crosses an axis emits a new directional intent without the finger being lifted ("up, down, up, left" all count). **[done]**
   - **Arrow keys** (↑ ↓ ← →) on a connected keyboard. **[done]**

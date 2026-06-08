@@ -166,6 +166,22 @@ dialog select {
   color: var(--ink);
 }
 
+dialog label.checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+dialog label.checkbox-row input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
 dialog menu {
   display: flex;
   justify-content: flex-end;

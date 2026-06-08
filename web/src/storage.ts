@@ -15,6 +15,7 @@ export interface PlayerRecord {
   characterOverride: string | null;
   startOverride: string | null;
   goalOverride: string | null;
+  legacyMovement: boolean;
 }
 
 let SQL: SqlJsStatic | null = null;
@@ -90,6 +91,12 @@ const migrations: Array<(db: Database) => void> = [
       `ALTER TABLE completed_mazes ADD COLUMN bucket TEXT NOT NULL DEFAULT 'simple'`,
     );
   },
+  // v3 — opt-in "legacy" movement (stop at every corner, not just real forks).
+  (db) => {
+    db.run(
+      `ALTER TABLE player ADD COLUMN legacy_movement INTEGER NOT NULL DEFAULT 0`,
+    );
+  },
 ];
 
 function migrate(db: Database): void {
@@ -119,7 +126,8 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
   const db = await getDb();
   const res = db.exec(
     `SELECT name, mazes_completed, skin_id,
-            character_shape, start_shape, goal_shape
+            character_shape, start_shape, goal_shape,
+            legacy_movement
        FROM player WHERE id = 1`,
   );
   if (res.length === 0 || res[0]!.values.length === 0) return null;
@@ -131,6 +139,7 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
     characterOverride: row[3] === null ? null : String(row[3]),
     startOverride: row[4] === null ? null : String(row[4]),
     goalOverride: row[5] === null ? null : String(row[5]),
+    legacyMovement: Number(row[6]) !== 0,
   };
 }
 
@@ -147,6 +156,12 @@ export async function setPlayerName(name: string): Promise<void> {
 export async function setSkinId(skinId: string): Promise<void> {
   const db = await getDb();
   db.run(`UPDATE player SET skin_id = ? WHERE id = 1`, [skinId]);
+  await persist();
+}
+
+export async function setLegacyMovement(value: boolean): Promise<void> {
+  const db = await getDb();
+  db.run(`UPDATE player SET legacy_movement = ? WHERE id = 1`, [value ? 1 : 0]);
   await persist();
 }
 
