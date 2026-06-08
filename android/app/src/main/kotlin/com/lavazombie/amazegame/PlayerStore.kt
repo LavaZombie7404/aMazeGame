@@ -39,6 +39,14 @@ class PlayerStore(context: Context) {
         get() = sp.getBoolean(KEY_AUTO_MODE, false)
         set(value) { sp.edit().putBoolean(KEY_AUTO_MODE, value).apply() }
 
+    var currentStreak: Int
+        get() = sp.getInt(KEY_CURRENT_STREAK, 0)
+        set(value) { sp.edit().putInt(KEY_CURRENT_STREAK, value).apply() }
+
+    var bestStreak: Int
+        get() = sp.getInt(KEY_BEST_STREAK, 0)
+        set(value) { sp.edit().putInt(KEY_BEST_STREAK, value).apply() }
+
     fun shapeOverride(slot: ShapeSlot): String? = sp.getString(slot.key, null)
     fun setShapeOverride(slot: ShapeSlot, name: String?) {
         sp.edit().apply {
@@ -72,5 +80,7 @@ class PlayerStore(context: Context) {
         private const val KEY_LEGACY_MOVEMENT = "legacy_movement"
         private const val KEY_SPEED_MULTIPLIER = "speed_multiplier"
         private const val KEY_AUTO_MODE = "auto_mode"
+        private const val KEY_CURRENT_STREAK = "current_streak"
+        private const val KEY_BEST_STREAK = "best_streak"
     }
 }

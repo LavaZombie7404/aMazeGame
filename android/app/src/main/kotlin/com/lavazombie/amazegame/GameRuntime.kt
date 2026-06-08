@@ -93,7 +93,22 @@ class GameRuntime(context: Context) {
     }
 
     fun reset() {
+        // Resetting mid-maze breaks the user's streak.
+        store.currentStreak = 0
+        _player.value = _player.value.copy(currentStreak = 0)
         nextRound(size = pickSize())
+    }
+
+    /**
+     * Today's UTC date as an integer seed (YYYYMMDD). Matches the web's
+     * `dailySeed()` so the same maze ships across platforms.
+     */
+    fun loadDailyMaze() {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        val seed = cal.get(java.util.Calendar.YEAR) * 10000 +
+            (cal.get(java.util.Calendar.MONTH) + 1) * 100 +
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        nextRound(size = 15, seed = seed)
     }
 
     fun nextRound(size: Int, seed: Int = Random.nextInt()) {
@@ -139,7 +154,15 @@ class GameRuntime(context: Context) {
                 _player.value.mazesCompleted
             } else {
                 val nc = store.incrementMazesCompleted()
-                _player.value = _player.value.copy(mazesCompleted = nc)
+                val nextStreak = store.currentStreak + 1
+                store.currentStreak = nextStreak
+                if (nextStreak > store.bestStreak) store.bestStreak = nextStreak
+                _player.value = _player.value.copy(
+                    mazesCompleted = nc,
+                    currentStreak = nextStreak,
+                    bestStreak = store.bestStreak,
+                )
+                Sfx.playGoalChime()
                 nc
             }
             nextRound(size = pickSize(simple = n % 2 == 0))
@@ -255,6 +278,8 @@ class GameRuntime(context: Context) {
         legacyMovement = store.legacyMovement,
         speedMultiplier = store.speedMultiplier,
         autoMode = store.autoMode,
+        currentStreak = store.currentStreak,
+        bestStreak = store.bestStreak,
     )
 
     private fun loadOverrides() = ShapeOverrides(
@@ -277,6 +302,8 @@ data class PlayerState(
     val legacyMovement: Boolean = false,
     val speedMultiplier: Float = 1f,
     val autoMode: Boolean = false,
+    val currentStreak: Int = 0,
+    val bestStreak: Int = 0,
 )
 
 /**

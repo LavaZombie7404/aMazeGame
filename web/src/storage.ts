@@ -21,6 +21,8 @@ export interface PlayerRecord {
   startColor: string | null;
   goalColor: string | null;
   autoMode: boolean;
+  currentStreak: number;
+  bestStreak: number;
 }
 
 let SQL: SqlJsStatic | null = null;
@@ -118,6 +120,12 @@ const migrations: Array<(db: Database) => void> = [
   (db) => {
     db.run(`ALTER TABLE player ADD COLUMN auto_mode INTEGER NOT NULL DEFAULT 0`);
   },
+  // v7 — streak counters. `current_streak` = consecutive completions without
+  // hitting Reset; `best_streak` = the all-time max.
+  (db) => {
+    db.run(`ALTER TABLE player ADD COLUMN current_streak INTEGER NOT NULL DEFAULT 0`);
+    db.run(`ALTER TABLE player ADD COLUMN best_streak INTEGER NOT NULL DEFAULT 0`);
+  },
 ];
 
 function migrate(db: Database): void {
@@ -150,7 +158,7 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
             character_shape, start_shape, goal_shape,
             legacy_movement, speed_multiplier,
             character_color, start_color, goal_color,
-            auto_mode
+            auto_mode, current_streak, best_streak
        FROM player WHERE id = 1`,
   );
   if (res.length === 0 || res[0]!.values.length === 0) return null;
@@ -168,6 +176,8 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
     startColor: row[9] === null ? null : String(row[9]),
     goalColor: row[10] === null ? null : String(row[10]),
     autoMode: Number(row[11]) !== 0,
+    currentStreak: Number(row[12]),
+    bestStreak: Number(row[13]),
   };
 }
 
@@ -202,6 +212,32 @@ export async function setSpeedMultiplier(value: number): Promise<void> {
 export async function setAutoMode(value: boolean): Promise<void> {
   const db = await getDb();
   db.run(`UPDATE player SET auto_mode = ? WHERE id = 1`, [value ? 1 : 0]);
+  await persist();
+}
+
+/**
+ * Atomically bump the current streak by 1 and update best_streak if the
+ * new current is higher. Returns the new {current, best}.
+ */
+export async function incrementStreak(): Promise<{ current: number; best: number }> {
+  const db = await getDb();
+  db.run(
+    `UPDATE player SET current_streak = current_streak + 1,
+                       best_streak = MAX(best_streak, current_streak + 1)
+       WHERE id = 1`,
+  );
+  await persist();
+  const r = db.exec(`SELECT current_streak, best_streak FROM player WHERE id = 1`);
+  const row = r[0]?.values[0];
+  return {
+    current: Number(row?.[0] ?? 0),
+    best: Number(row?.[1] ?? 0),
+  };
+}
+
+export async function resetStreak(): Promise<void> {
+  const db = await getDb();
+  db.run(`UPDATE player SET current_streak = 0 WHERE id = 1`);
   await persist();
 }
 

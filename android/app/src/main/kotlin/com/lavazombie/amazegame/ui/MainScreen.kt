@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.width
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lavazombie.amazegame.GameRuntime
 import com.lavazombie.amazegame.PlayerStore
+import com.lavazombie.amazegame.Sfx
 
 private val PAPER = Color(0xFFF7F3E8)
 private val PAPER_HUD = Color(0xD9F7F3E8)
@@ -88,8 +89,14 @@ fun MainScreen(game: GameRuntime) {
             Hud(
                 playerName = player.name ?: "—",
                 mazesSolved = player.mazesCompleted,
+                currentStreak = player.currentStreak,
+                bestStreak = player.bestStreak,
                 onReset = { game.reset() },
                 onSettings = { settingsOpen = true },
+                onDaily = {
+                    game.loadDailyMaze()
+                    Sfx.playWhoosh()
+                },
             )
             // The canvas occupies the rest of the screen.
             Box(Modifier.weight(1f)) {
@@ -104,8 +111,11 @@ fun MainScreen(game: GameRuntime) {
 private fun Hud(
     playerName: String,
     mazesSolved: Int,
+    currentStreak: Int,
+    bestStreak: Int,
     onReset: () -> Unit,
     onSettings: () -> Unit,
+    onDaily: () -> Unit,
 ) {
     Row(
         Modifier
@@ -131,9 +141,11 @@ private fun Hud(
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            HudIconButton(symbol = "↻", contentDescription = "New maze", onClick = onReset)
+            HudIconButton(symbol = "*", contentDescription = "Daily maze", onClick = onDaily)
             Spacer(Modifier.width(8.dp))
-            HudIconButton(symbol = "⚙", contentDescription = "Settings", onClick = onSettings)
+            HudIconButton(symbol = "R", contentDescription = "New maze", onClick = onReset)
+            Spacer(Modifier.width(8.dp))
+            HudIconButton(symbol = "S", contentDescription = "Settings", onClick = onSettings)
         }
         Column(
             Modifier.weight(1f),
@@ -150,6 +162,18 @@ private fun Hud(
                 color = INK,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "STREAK",
+                color = INK_SOFT.copy(alpha = 0.65f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                if (bestStreak > 0) "$currentStreak (best $bestStreak)" else "$currentStreak",
+                color = INK,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
             )
         }
     }

@@ -1,4 +1,5 @@
 import { cellIndex, DIR_VEC, generateMaze, hasWall, hashMaze, type Maze } from "./maze";
+import { playGoalChime, playWhoosh } from "./sfx";
 import {
   fitMetrics,
   render,
@@ -16,8 +17,10 @@ import {
 import {
   getPlayer,
   hasSeenMaze,
+  incrementStreak,
   markGenerated,
   recordCompletion,
+  resetStreak,
   setAutoMode,
   setColorOverride,
   setLegacyMovement,
@@ -46,9 +49,11 @@ void loadCore()
 const canvas = document.getElementById("maze") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
 const scoreEl = document.getElementById("score")!;
+const streakEl = document.getElementById("streak")!;
 const nameEl = document.getElementById("player-name")!;
 const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
 const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
+const dailyBtn = document.getElementById("daily-btn") as HTMLButtonElement;
 const nameDialog = document.getElementById("name-dialog") as HTMLDialogElement;
 const nameInput = document.getElementById("name-input") as HTMLInputElement;
 const settingsDialog = document.getElementById(
@@ -149,6 +154,25 @@ async function generateUniqueMaze(bucket: DifficultyBucket): Promise<Maze> {
 async function nextRound(player: PlayerRecord) {
   const bucket = bucketFor(player.mazesCompleted);
   maze = await generateUniqueMaze(bucket);
+  movement = createMovementState(maze);
+  resetAutoCache();
+  resize();
+}
+
+/** Today's daily maze size — fixed so everyone solves the same N×N maze. */
+const DAILY_SIZE = 15;
+
+/**
+ * Today's UTC date as an integer seed (YYYYMMDD). Same on every device, so
+ * everyone gets the same maze. Re-rolls automatically at UTC midnight.
+ */
+function dailySeed(): number {
+  const d = new Date();
+  return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
+}
+
+async function loadDailyMaze() {
+  maze = generateMaze(DAILY_SIZE, dailySeed());
   movement = createMovementState(maze);
   resetAutoCache();
   resize();
@@ -321,6 +345,9 @@ async function currentStoredColor(slot: ShapeSlot): Promise<string | null> {
 function refreshHud(p: PlayerRecord) {
   nameEl.textContent = p.name;
   scoreEl.textContent = String(p.mazesCompleted);
+  streakEl.textContent = p.bestStreak > 0
+    ? `${p.currentStreak} (best ${p.bestStreak})`
+    : String(p.currentStreak);
 }
 
 function populateShapeSelect(select: HTMLSelectElement, current: string | null) {
@@ -467,7 +494,9 @@ async function onCompletion() {
       (await getPlayer())?.mazesCompleted ?? 0,
     );
     await recordCompletion(h, maze.size, maze.seed, currentBucket);
+    await incrementStreak();
   }
+  playGoalChime();
   const p = await getPlayer();
   if (p) refreshHud(p);
   // Brief pause, then next maze.
@@ -496,10 +525,20 @@ async function boot() {
   });
 
   resetBtn.addEventListener("click", async () => {
-    // Abandon the current maze and generate a new one. The skipped maze
-    // doesn't count toward the score and won't repeat this session.
+    // Abandon the current maze and generate a new one. Skipping breaks the
+    // current streak. The skipped maze doesn't count toward the score and
+    // won't repeat this session.
+    await resetStreak();
     const p = await getPlayer();
-    if (p) await nextRound(p);
+    if (p) {
+      await nextRound(p);
+      refreshHud(p);
+    }
+  });
+
+  dailyBtn.addEventListener("click", async () => {
+    await loadDailyMaze();
+    playWhoosh();
   });
 
   settingsBtn.addEventListener("click", async () => {

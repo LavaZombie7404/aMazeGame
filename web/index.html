@@ -19,6 +19,14 @@
         </div>
         <div class="hud-center">
           <button
+            id="daily-btn"
+            type="button"
+            aria-label="Play today's daily maze"
+            title="Daily maze"
+          >
+            ★
+          </button>
+          <button
             id="reset-btn"
             type="button"
             aria-label="Skip this maze and generate a new one"
@@ -38,6 +46,8 @@
         <div class="hud-right">
           <span class="hud-label">Mazes solved</span>
           <span id="score" class="hud-value">0</span>
+          <span class="hud-label hud-sub-label">Streak</span>
+          <span id="streak" class="hud-sub-value">0</span>
         </div>
       </header>
       <main id="stage">
