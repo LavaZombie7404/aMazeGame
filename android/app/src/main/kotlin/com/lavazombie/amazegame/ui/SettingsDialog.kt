@@ -197,7 +197,6 @@ private fun ColorSwatch(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SpeedPicker(current: Float, onChange: (Float) -> Unit) {
     var open by remember { mutableStateOf(false) }
@@ -205,15 +204,22 @@ private fun SpeedPicker(current: Float, onChange: (Float) -> Unit) {
         ?: 1.0f
     Column {
         Text("Speed", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
-            OutlinedTextField(
-                value = speedLabel(active),
-                onValueChange = {},
-                readOnly = true,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
-            )
-            ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            androidx.compose.material3.OutlinedButton(
+                onClick = { open = true },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    speedLabel(active),
+                    fontSize = 16.sp,
+                    color = Color(0xFF1D2433),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            androidx.compose.material3.DropdownMenu(
+                expanded = open,
+                onDismissRequest = { open = false },
+            ) {
                 SPEED_OPTIONS.forEach { v ->
                     DropdownMenuItem(
                         text = { Text(speedLabel(v)) },
