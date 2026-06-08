@@ -291,25 +291,25 @@ function axisFor(dir: number): number {
  * Returns:
  *  - `lookup[cellIdx * 3 + axis]` = direction to take from that state on
  *    the shortest path, or -1 if the state is off the path.
- *  - `extraWalls[cellIdx]` = invisible-wall overlay sealing off-path edges.
- *    Only meaningful for non-weave mazes — weave mazes get an empty array
- *    because a single per-cell mask can't encode the axis-dependent path
- *    semantics correctly.
+ *  - `extraWalls[cellIdx]` = invisible-wall overlay sealing every edge not
+ *    on the path. Populated for both weave and non-weave mazes — the bridge
+ *    cells on the path get their on-axis bits cleared, the off-axis bits
+ *    stay set. The overlay turns every path cell into a single-exit corridor
+ *    so step auto-routes the whole path; queuedDir is only consumed once,
+ *    at the very first frame to wake the dot up.
  */
 function computePathSolution(
   m: Maze,
-  weave: boolean,
+  _weave: boolean,
 ): { lookup: Int8Array; extraWalls: Uint8Array } {
   const n = m.size;
   const stateCount = n * n * 3;
   const lookup = new Int8Array(stateCount).fill(-1);
-  const extraWalls = weave
-    ? new Uint8Array(0)
-    : new Uint8Array(n * n).fill(0b1111);
+  const extraWalls = new Uint8Array(n * n).fill(0b1111);
   const startIdx = cellIndex(n, m.start.x, m.start.y);
   const goalIdx = cellIndex(n, m.goal.x, m.goal.y);
   if (startIdx === goalIdx) {
-    if (extraWalls.length > 0) extraWalls[startIdx] = 0;
+    extraWalls[startIdx] = 0;
     return { lookup, extraWalls };
   }
 
@@ -351,22 +351,23 @@ function computePathSolution(
   }
   if (goalState < 0) return { lookup, extraWalls };
 
-  // Walk back recording the direction taken at each path state. For the
-  // non-weave overlay we also clear the corresponding wall bit on both
-  // endpoints of every traversed edge.
+  // Walk back recording the direction taken at each path state and clearing
+  // the corresponding wall bit on both endpoints of every traversed edge.
+  // Cleared bit = allowed direction. For non-bridge cells the allowed set
+  // is just {forward, back}; for bridge cells it's the two same-axis
+  // directions and the perpendicular axis stays blocked (its bits never
+  // get cleared because BFS never traverses them at this bridge).
   let cur = goalState;
   while (cur !== startState) {
     const dir = parentDir[cur]!;
     if (dir < 0) break;
     const prev = parentState[cur]!;
     lookup[prev] = dir;
-    if (extraWalls.length > 0) {
-      const prevCell = (prev - (prev % 3)) / 3;
-      const curCell = (cur - (cur % 3)) / 3;
-      extraWalls[prevCell] &= ~(1 << dir);
-      const backDir = (dir + 2) % 4;
-      extraWalls[curCell] &= ~(1 << backDir);
-    }
+    const prevCell = (prev - (prev % 3)) / 3;
+    const curCell = (cur - (cur % 3)) / 3;
+    extraWalls[prevCell] &= ~(1 << dir);
+    const backDir = (dir + 2) % 4;
+    extraWalls[curCell] &= ~(1 << backDir);
     cur = prev;
   }
   return { lookup, extraWalls };

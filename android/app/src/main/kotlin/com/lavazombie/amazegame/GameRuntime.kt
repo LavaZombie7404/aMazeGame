@@ -214,24 +214,27 @@ class GameRuntime(context: Context) {
      *              shortest path, or -1 if the state is off the path.
      *              axis: 0 = horizontal entry (E/W), 1 = vertical (N/S),
      *              2 = start (no entry yet).
-     *   `second` = ByteArray of size N² with bits set for every wall not on
-     *              the path. Only meaningful for non-weave mazes — weave
-     *              returns an empty array because the per-axis path
-     *              semantics can't be encoded in a single per-cell mask.
+     *   `second` = ByteArray of size N² with the wall bits set for every
+     *              direction NOT on the path edge that touches this cell.
+     *              Populated for both weave and non-weave mazes — at a
+     *              bridge on the path the on-axis bits get cleared, the
+     *              perpendicular axis stays blocked. The overlay turns
+     *              every path cell into a single-exit corridor so step
+     *              auto-routes the entire path.
      */
     private fun computePathSolution(
         walls: ByteArray, size: Int,
         startX: Int, startY: Int,
         goalX: Int, goalY: Int,
-        weave: Boolean,
+        @Suppress("UNUSED_PARAMETER") weave: Boolean,
     ): Pair<IntArray, ByteArray> {
         val stateCount = size * size * 3
         val lookup = IntArray(stateCount) { -1 }
-        val extra = if (weave) ByteArray(0) else ByteArray(size * size) { 0b1111.toByte() }
+        val extra = ByteArray(size * size) { 0b1111.toByte() }
         val startIdx = startY * size + startX
         val goalIdx = goalY * size + goalX
         if (startIdx == goalIdx) {
-            if (extra.isNotEmpty()) extra[startIdx] = 0
+            extra[startIdx] = 0
             return lookup to extra
         }
 
@@ -281,13 +284,11 @@ class GameRuntime(context: Context) {
             if (dir < 0) break
             val prev = parentState[cur]
             lookup[prev] = dir
-            if (extra.isNotEmpty()) {
-                val prevCell = prev / 3
-                val curCell = cur / 3
-                extra[prevCell] = (extra[prevCell].toInt() and (1 shl dir).inv()).toByte()
-                val backDir = (dir + 2) % 4
-                extra[curCell] = (extra[curCell].toInt() and (1 shl backDir).inv()).toByte()
-            }
+            val prevCell = prev / 3
+            val curCell = cur / 3
+            extra[prevCell] = (extra[prevCell].toInt() and (1 shl dir).inv()).toByte()
+            val backDir = (dir + 2) % 4
+            extra[curCell] = (extra[curCell].toInt() and (1 shl backDir).inv()).toByte()
             cur = prev
         }
         return lookup to extra
