@@ -141,11 +141,11 @@ private fun Hud(
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            HudIconButton(symbol = "*", contentDescription = "Daily maze", onClick = onDaily)
-            Spacer(Modifier.width(8.dp))
-            HudIconButton(symbol = "R", contentDescription = "New maze", onClick = onReset)
-            Spacer(Modifier.width(8.dp))
-            HudIconButton(symbol = "S", contentDescription = "Settings", onClick = onSettings)
+            HudTextButton(label = "Daily", onClick = onDaily)
+            Spacer(Modifier.width(6.dp))
+            HudTextButton(label = "Reset", onClick = onReset)
+            Spacer(Modifier.width(6.dp))
+            HudTextButton(label = "Settings", onClick = onSettings)
         }
         Column(
             Modifier.weight(1f),
@@ -180,19 +180,19 @@ private fun Hud(
 }
 
 @Composable
-private fun HudIconButton(symbol: String, contentDescription: String, onClick: () -> Unit) {
+private fun HudTextButton(label: String, onClick: () -> Unit) {
     Box(
         Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .border(BorderStroke(1.5.dp, INK_SOFT), CircleShape)
-            .clickable(onClick = onClick),
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .border(
+                BorderStroke(1.5.dp, INK_SOFT),
+                androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(symbol, color = INK, fontSize = 20.sp)
-        // contentDescription consumed via semantics in clickable's onClickLabel;
-        // for the scaffold we accept the warning rather than wire Modifier.semantics.
-        @Suppress("UNUSED_PARAMETER") val cd = contentDescription
+        Text(label, color = INK, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
