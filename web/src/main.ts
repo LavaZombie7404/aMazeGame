@@ -100,10 +100,12 @@ let overrides: ShapeOverrides = { character: null, start: null, goal: null };
 let legacyMovement = false;
 let speedMultiplier = 1;
 let autoMode = false;
-// BFS cache — recomputed only on cell change so we don't run BFS 60×/s.
-let autoLastCellX = -1;
-let autoLastCellY = -1;
-let autoDir: number | null = null;
+/**
+ * Precomputed shortest-path solution for the current maze.
+ * `pathDir[cellIdx]` = direction to take from that cell to advance along
+ * the BFS shortest path toward the goal. `-1` for cells not on the path.
+ */
+let pathDir: Int8Array = new Int8Array(0);
 
 /** PRD §6.0 — alternate simple ↔ complex buckets across rounds. */
 function bucketFor(mazesCompleted: number): DifficultyBucket {
@@ -143,6 +145,7 @@ async function nextRound(player: PlayerRecord) {
   const bucket = bucketFor(player.mazesCompleted);
   maze = await generateUniqueMaze(bucket);
   movement = createMovementState(maze);
+  resetAutoCache();
   resize();
 }
 
@@ -208,36 +211,31 @@ function overridesFromPlayer(p: PlayerRecord): ShapeOverrides {
 }
 
 /**
- * Breadth-first search from (fromX, fromY) to the goal. Returns the
- * direction (N/E/S/W) of the first step on the shortest path, or null if
- * the maze has no path (shouldn't happen — perfect mazes are connected).
+ * BFS from start to goal, then walk back filling in `pathDir[cellIdx]` =
+ * direction from that cell to the next cell on the shortest path. Cells
+ * that aren't on the path keep the sentinel `-1`. Computed once per maze.
  */
-function bfsFirstDir(m: Maze, fromX: number, fromY: number): number | null {
-  if (fromX === m.goal.x && fromY === m.goal.y) return null;
+function computePathDir(m: Maze): Int8Array {
   const n = m.size;
+  const out = new Int8Array(n * n).fill(-1);
   const visited = new Uint8Array(n * n);
-  // parentDir[idx] = direction we came from (so we know how to reach it).
   const parentDir = new Int8Array(n * n).fill(-1);
-  const queue: number[] = [cellIndex(n, fromX, fromY)];
-  visited[queue[0]!] = 1;
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
+  const startIdx = cellIndex(n, m.start.x, m.start.y);
+  const goalIdx = cellIndex(n, m.goal.x, m.goal.y);
+  if (startIdx === goalIdx) return out;
+  // Simple ring-buffer-free FIFO using an index pointer to avoid O(n) shifts.
+  const queue: number[] = [startIdx];
+  let head = 0;
+  visited[startIdx] = 1;
+  let found = false;
+  while (head < queue.length) {
+    const cur = queue[head++]!;
+    if (cur === goalIdx) {
+      found = true;
+      break;
+    }
     const cx = cur % n;
     const cy = (cur - cx) / n;
-    if (cx === m.goal.x && cy === m.goal.y) {
-      // Walk back to the cell adjacent to fromX,fromY and return its parentDir.
-      let idx = cur;
-      const fromIdx = cellIndex(n, fromX, fromY);
-      while (true) {
-        const dir = parentDir[idx]!;
-        const [vx, vy] = DIR_VEC[dir]!;
-        const px = (idx % n) - vx;
-        const py = ((idx - (idx % n)) / n) - vy;
-        const pIdx = cellIndex(n, px, py);
-        if (pIdx === fromIdx) return dir;
-        idx = pIdx;
-      }
-    }
     for (let d = 0; d < 4; d++) {
       if (hasWall(m, cx, cy, d)) continue;
       const [vx, vy] = DIR_VEC[d]!;
@@ -251,13 +249,23 @@ function bfsFirstDir(m: Maze, fromX: number, fromY: number): number | null {
       queue.push(nIdx);
     }
   }
-  return null;
+  if (!found) return out;
+  let idx = goalIdx;
+  while (idx !== startIdx) {
+    const dir = parentDir[idx]!;
+    if (dir < 0) break;
+    const [vx, vy] = DIR_VEC[dir]!;
+    const px = (idx % n) - vx;
+    const py = ((idx - (idx % n)) / n) - vy;
+    const pIdx = cellIndex(n, px, py);
+    out[pIdx] = dir;
+    idx = pIdx;
+  }
+  return out;
 }
 
 function resetAutoCache() {
-  autoLastCellX = -1;
-  autoLastCellY = -1;
-  autoDir = null;
+  pathDir = new Int8Array(0);
 }
 
 /** Skin's default color for a slot (used when no override is stored). */
@@ -386,14 +394,10 @@ function frame(now: number) {
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
     if (autoMode) {
-      if (movement.cellX !== autoLastCellX || movement.cellY !== autoLastCellY) {
-        autoLastCellX = movement.cellX;
-        autoLastCellY = movement.cellY;
-        autoDir = bfsFirstDir(maze, movement.cellX, movement.cellY);
-      }
-      if (autoDir !== null) {
-        queueDirection(maze, movement, autoDir);
-      }
+      if (pathDir.length === 0) pathDir = computePathDir(maze);
+      const idx = cellIndex(maze.size, movement.cellX, movement.cellY);
+      const d = pathDir[idx]!;
+      if (d >= 0) queueDirection(maze, movement, d);
     }
     const res = step(maze, movement, dt * speedMultiplier, legacyMovement);
     render(

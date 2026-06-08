@@ -20,14 +20,11 @@ class GameRuntime(context: Context) {
     private val store = PlayerStore(context)
     private var gamePtr: Long = 0L
 
-    // Cached maze structure for the auto-solver BFS — refreshed on nextRound.
-    private var autoWalls: ByteArray = ByteArray(0)
+    // Precomputed shortest-path solution for the current maze.
+    // pathDir[cellIdx] = direction to take from that cell to advance toward
+    // the goal along the BFS shortest path. -1 for cells off the path.
     private var autoSize: Int = 0
-    private var autoGoalX: Int = 0
-    private var autoGoalY: Int = 0
-    private var autoLastCellX: Int = -1
-    private var autoLastCellY: Int = -1
-    private var autoDir: Int = -1
+    private var pathDir: IntArray = IntArray(0)
 
     private val _state = MutableStateFlow(GameState.EMPTY)
     val state: StateFlow<GameState> = _state
@@ -79,9 +76,6 @@ class GameRuntime(context: Context) {
     fun setAutoMode(value: Boolean) {
         store.autoMode = value
         _player.value = _player.value.copy(autoMode = value)
-        autoLastCellX = -1
-        autoLastCellY = -1
-        autoDir = -1
     }
 
     fun reset() {
@@ -93,32 +87,25 @@ class GameRuntime(context: Context) {
         gamePtr = bridge.gameNew(size, seed)
         // Per-game flag — re-apply on each new round.
         bridge.setLegacyMovement(gamePtr, _player.value.legacyMovement)
-        // Cache maze structure for the BFS auto-solver.
-        autoWalls = bridge.mazeWalls(gamePtr)
-        autoSize = bridge.mazeSize(gamePtr)
+        // Precompute the shortest-path solution table for the auto-solver.
+        val walls = bridge.mazeWalls(gamePtr)
+        val mSize = bridge.mazeSize(gamePtr)
+        val start = bridge.mazeStart(gamePtr)
         val goal = bridge.mazeGoal(gamePtr)
-        autoGoalX = goal[0]
-        autoGoalY = goal[1]
-        autoLastCellX = -1
-        autoLastCellY = -1
-        autoDir = -1
+        autoSize = mSize
+        pathDir = computePathDir(walls, mSize, start[0], start[1], goal[0], goal[1])
         publish()
     }
 
     fun tick(dtMs: Int): Boolean {
-        // Auto-solver: queue the BFS first-step direction whenever the player
-        // sits at a new logical cell. The core's queue_direction is a no-op if
-        // the same direction is queued repeatedly, so this is cheap.
-        if (_player.value.autoMode && autoSize > 0) {
+        // Auto-solver: look up the precomputed direction for the player's
+        // current logical cell and queue it. queue_direction is idempotent
+        // on a same-direction call so re-queueing every tick is cheap.
+        if (_player.value.autoMode && autoSize > 0 && pathDir.isNotEmpty()) {
             val cell = bridge.playerCell(gamePtr)
-            val cx = cell[0]
-            val cy = cell[1]
-            if (cx != autoLastCellX || cy != autoLastCellY) {
-                autoLastCellX = cx
-                autoLastCellY = cy
-                autoDir = bfsFirstDir(autoWalls, autoSize, cx, cy, autoGoalX, autoGoalY)
-            }
-            if (autoDir >= 0) bridge.queueDirection(gamePtr, autoDir)
+            val idx = cell[1] * autoSize + cell[0]
+            val d = pathDir.getOrNull(idx) ?: -1
+            if (d >= 0) bridge.queueDirection(gamePtr, d)
         }
 
         val scaled = (dtMs * _player.value.speedMultiplier)
@@ -143,42 +130,36 @@ class GameRuntime(context: Context) {
     }
 
     /**
-     * BFS from (fromX, fromY) to (goalX, goalY) over the cached wall mask.
-     * Returns the direction of the first step on the shortest path, or -1
-     * if `from` already equals the goal (or the goal is unreachable, which
-     * shouldn't happen for a perfect maze).
+     * BFS start → goal, then walk back filling in the per-cell next-step
+     * direction along the shortest path. Returns an IntArray of size N²
+     * with `dir` for cells on the path and `-1` for cells off it.
      */
-    private fun bfsFirstDir(
+    private fun computePathDir(
         walls: ByteArray, size: Int,
-        fromX: Int, fromY: Int,
+        startX: Int, startY: Int,
         goalX: Int, goalY: Int,
-    ): Int {
-        if (fromX == goalX && fromY == goalY) return -1
+    ): IntArray {
+        val out = IntArray(size * size) { -1 }
+        val startIdx = startY * size + startX
+        val goalIdx = goalY * size + goalX
+        if (startIdx == goalIdx) return out
+
         val visited = BooleanArray(size * size)
         val parentDir = IntArray(size * size) { -1 }
         val queue = ArrayDeque<Int>()
-        val fromIdx = fromY * size + fromX
-        queue.addLast(fromIdx)
-        visited[fromIdx] = true
+        queue.addLast(startIdx)
+        visited[startIdx] = true
         val vx = intArrayOf(0, 1, 0, -1)
         val vy = intArrayOf(-1, 0, 1, 0)
+        var found = false
         while (queue.isNotEmpty()) {
             val cur = queue.removeFirst()
+            if (cur == goalIdx) {
+                found = true
+                break
+            }
             val cx = cur % size
             val cy = cur / size
-            if (cx == goalX && cy == goalY) {
-                // Walk back to the cell whose parent is fromIdx.
-                var idx = cur
-                while (true) {
-                    val dir = parentDir[idx]
-                    if (dir < 0) return -1 // safety; shouldn't happen
-                    val px = (idx % size) - vx[dir]
-                    val py = (idx / size) - vy[dir]
-                    val pIdx = py * size + px
-                    if (pIdx == fromIdx) return dir
-                    idx = pIdx
-                }
-            }
             val mask = walls[cur].toInt() and 0xff
             for (d in 0..3) {
                 if (mask and (1 shl d) != 0) continue
@@ -192,7 +173,19 @@ class GameRuntime(context: Context) {
                 queue.addLast(nIdx)
             }
         }
-        return -1
+        if (!found) return out
+
+        var idx = goalIdx
+        while (idx != startIdx) {
+            val dir = parentDir[idx]
+            if (dir < 0) break
+            val px = (idx % size) - vx[dir]
+            val py = (idx / size) - vy[dir]
+            val pIdx = py * size + px
+            out[pIdx] = dir
+            idx = pIdx
+        }
+        return out
     }
 
     fun queue(direction: Direction) {
