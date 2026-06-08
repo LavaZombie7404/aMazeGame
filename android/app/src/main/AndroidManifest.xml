@@ -12,7 +12,7 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="Maze experter"
+        android:label="maxe explorer"
         android:supportsRtl="true"
         android:theme="@style/Theme.aMazeGame"
         tools:targetApi="31"
