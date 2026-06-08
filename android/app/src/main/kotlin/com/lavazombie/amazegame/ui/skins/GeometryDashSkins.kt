@@ -160,7 +160,7 @@ private fun makeGeometryDashSkin(
 
 val GeometryDashClassicSkin = makeGeometryDashSkin(
     skinId = "geometry-dash-classic",
-    skinName = "GD · Classic Neon",
+    skinName = "Classic Neon",
     p = GeometryDashPalette(
         bgTop = Color(0xFF0A0A23),
         bgBottom = Color(0xFF1A0A3A),
@@ -178,7 +178,7 @@ val GeometryDashClassicSkin = makeGeometryDashSkin(
 
 val GeometryDashSubZeroSkin = makeGeometryDashSkin(
     skinId = "geometry-dash-sub-zero",
-    skinName = "GD · Sub Zero",
+    skinName = "Freezing maze",
     p = GeometryDashPalette(
         bgTop = Color(0xFF03102B),
         bgBottom = Color(0xFF0C2350),
@@ -196,7 +196,7 @@ val GeometryDashSubZeroSkin = makeGeometryDashSkin(
 
 val GeometryDashMeltdownSkin = makeGeometryDashSkin(
     skinId = "geometry-dash-meltdown",
-    skinName = "GD · Meltdown",
+    skinName = "Meltdown",
     p = GeometryDashPalette(
         bgTop = Color(0xFF1A0204),
         bgBottom = Color(0xFF2E0A07),

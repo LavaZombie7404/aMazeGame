@@ -186,7 +186,7 @@ function makeGeometryDashSkin(
 
 export const geometryDashClassicSkin = makeGeometryDashSkin(
   "geometry-dash-classic",
-  "GD · Classic Neon",
+  "Classic Neon",
   {
     bgTop: "#0a0a23",
     bgBottom: "#1a0a3a",
@@ -204,7 +204,7 @@ export const geometryDashClassicSkin = makeGeometryDashSkin(
 
 export const geometryDashSubZeroSkin = makeGeometryDashSkin(
   "geometry-dash-sub-zero",
-  "GD · Sub Zero",
+  "Freezing maze",
   {
     bgTop: "#03102b",
     bgBottom: "#0c2350",
@@ -222,7 +222,7 @@ export const geometryDashSubZeroSkin = makeGeometryDashSkin(
 
 export const geometryDashMeltdownSkin = makeGeometryDashSkin(
   "geometry-dash-meltdown",
-  "GD · Meltdown",
+  "Meltdown",
   {
     bgTop: "#1a0204",
     bgBottom: "#2e0a07",
