@@ -147,7 +147,12 @@ val MathTextbookSkin = object : Skin {
 
 const val DEFAULT_SKIN_ID = "math-textbook"
 
-private val REGISTRY: Map<String, Skin> = listOf(MathTextbookSkin).associateBy { it.id }
+private val REGISTRY: Map<String, Skin> = listOf(
+    MathTextbookSkin,
+    GeometryDashClassicSkin,
+    GeometryDashSubZeroSkin,
+    GeometryDashMeltdownSkin,
+).associateBy { it.id }
 
 fun listSkins(): List<Skin> = REGISTRY.values.toList()
 
