@@ -82,11 +82,13 @@ fun SettingsDialog(
     goalColor: String?,
     legacyMovement: Boolean,
     speedMultiplier: Float,
+    autoMode: Boolean,
     onSkinChange: (String) -> Unit,
     onShapeChange: (PlayerStore.ShapeSlot, String?) -> Unit,
     onColorChange: (PlayerStore.ShapeSlot, String?) -> Unit,
     onLegacyMovementChange: (Boolean) -> Unit,
     onSpeedMultiplierChange: (Float) -> Unit,
+    onAutoModeChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val skins = listSkins()
@@ -142,6 +144,10 @@ fun SettingsDialog(
                     enabled = legacyMovement,
                     onChange = onLegacyMovementChange,
                 )
+                AutoModeToggle(
+                    enabled = autoMode,
+                    onChange = onAutoModeChange,
+                )
                 SpeedPicker(
                     current = speedMultiplier,
                     onChange = onSpeedMultiplierChange,
@@ -149,6 +155,28 @@ fun SettingsDialog(
             }
         },
     )
+}
+
+@Composable
+private fun AutoModeToggle(enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Auto mode",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "Plays itself; mazes solved doesn't go up",
+                fontSize = 11.sp,
+            )
+        }
+        Switch(checked = enabled, onCheckedChange = onChange)
+    }
 }
 
 @Composable

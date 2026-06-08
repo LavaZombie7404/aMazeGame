@@ -68,6 +68,7 @@ fun MainScreen(game: GameRuntime) {
             goalColor = player.overrides.goalColor,
             legacyMovement = player.legacyMovement,
             speedMultiplier = player.speedMultiplier,
+            autoMode = player.autoMode,
             onSkinChange = { game.setSkin(it) },
             onShapeChange = { slot: PlayerStore.ShapeSlot, name: String? ->
                 game.setShapeOverride(slot, name)
@@ -77,6 +78,7 @@ fun MainScreen(game: GameRuntime) {
             },
             onLegacyMovementChange = { game.setLegacyMovement(it) },
             onSpeedMultiplierChange = { game.setSpeedMultiplier(it) },
+            onAutoModeChange = { game.setAutoMode(it) },
             onDismiss = { settingsOpen = false },
         )
     }

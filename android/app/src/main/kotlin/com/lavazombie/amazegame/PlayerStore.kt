@@ -35,6 +35,10 @@ class PlayerStore(context: Context) {
         get() = sp.getFloat(KEY_SPEED_MULTIPLIER, 1.0f)
         set(value) { sp.edit().putFloat(KEY_SPEED_MULTIPLIER, value).apply() }
 
+    var autoMode: Boolean
+        get() = sp.getBoolean(KEY_AUTO_MODE, false)
+        set(value) { sp.edit().putBoolean(KEY_AUTO_MODE, value).apply() }
+
     fun shapeOverride(slot: ShapeSlot): String? = sp.getString(slot.key, null)
     fun setShapeOverride(slot: ShapeSlot, name: String?) {
         sp.edit().apply {
@@ -67,5 +71,6 @@ class PlayerStore(context: Context) {
         private const val KEY_SKIN = "skin_id"
         private const val KEY_LEGACY_MOVEMENT = "legacy_movement"
         private const val KEY_SPEED_MULTIPLIER = "speed_multiplier"
+        private const val KEY_AUTO_MODE = "auto_mode"
     }
 }

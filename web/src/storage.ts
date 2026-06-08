@@ -20,6 +20,7 @@ export interface PlayerRecord {
   characterColor: string | null;
   startColor: string | null;
   goalColor: string | null;
+  autoMode: boolean;
 }
 
 let SQL: SqlJsStatic | null = null;
@@ -113,6 +114,10 @@ const migrations: Array<(db: Database) => void> = [
     db.run(`ALTER TABLE player ADD COLUMN start_color TEXT`);
     db.run(`ALTER TABLE player ADD COLUMN goal_color TEXT`);
   },
+  // v6 — opt-in auto-solver mode; completions don't increment the score.
+  (db) => {
+    db.run(`ALTER TABLE player ADD COLUMN auto_mode INTEGER NOT NULL DEFAULT 0`);
+  },
 ];
 
 function migrate(db: Database): void {
@@ -144,7 +149,8 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
     `SELECT name, mazes_completed, skin_id,
             character_shape, start_shape, goal_shape,
             legacy_movement, speed_multiplier,
-            character_color, start_color, goal_color
+            character_color, start_color, goal_color,
+            auto_mode
        FROM player WHERE id = 1`,
   );
   if (res.length === 0 || res[0]!.values.length === 0) return null;
@@ -161,6 +167,7 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
     characterColor: row[8] === null ? null : String(row[8]),
     startColor: row[9] === null ? null : String(row[9]),
     goalColor: row[10] === null ? null : String(row[10]),
+    autoMode: Number(row[11]) !== 0,
   };
 }
 
@@ -189,6 +196,12 @@ export async function setLegacyMovement(value: boolean): Promise<void> {
 export async function setSpeedMultiplier(value: number): Promise<void> {
   const db = await getDb();
   db.run(`UPDATE player SET speed_multiplier = ? WHERE id = 1`, [value]);
+  await persist();
+}
+
+export async function setAutoMode(value: boolean): Promise<void> {
+  const db = await getDb();
+  db.run(`UPDATE player SET auto_mode = ? WHERE id = 1`, [value ? 1 : 0]);
   await persist();
 }
 

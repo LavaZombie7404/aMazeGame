@@ -1,4 +1,4 @@
-import { generateMaze, hashMaze, type Maze } from "./maze";
+import { cellIndex, DIR_VEC, generateMaze, hasWall, hashMaze, type Maze } from "./maze";
 import {
   fitMetrics,
   render,
@@ -18,6 +18,7 @@ import {
   hasSeenMaze,
   markGenerated,
   recordCompletion,
+  setAutoMode,
   setColorOverride,
   setLegacyMovement,
   setPlayerName,
@@ -85,6 +86,9 @@ const startColorReset = document.getElementById(
 const goalColorReset = document.getElementById(
   "goal-color-reset",
 ) as HTMLButtonElement;
+const autoModeToggle = document.getElementById(
+  "auto-mode-toggle",
+) as HTMLInputElement;
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.5, 2, 3] as const;
 
@@ -95,6 +99,11 @@ let skin: Skin;
 let overrides: ShapeOverrides = { character: null, start: null, goal: null };
 let legacyMovement = false;
 let speedMultiplier = 1;
+let autoMode = false;
+// BFS cache — recomputed only on cell change so we don't run BFS 60×/s.
+let autoLastCellX = -1;
+let autoLastCellY = -1;
+let autoDir: number | null = null;
 
 /** PRD §6.0 — alternate simple ↔ complex buckets across rounds. */
 function bucketFor(mazesCompleted: number): DifficultyBucket {
@@ -198,6 +207,59 @@ function overridesFromPlayer(p: PlayerRecord): ShapeOverrides {
   };
 }
 
+/**
+ * Breadth-first search from (fromX, fromY) to the goal. Returns the
+ * direction (N/E/S/W) of the first step on the shortest path, or null if
+ * the maze has no path (shouldn't happen — perfect mazes are connected).
+ */
+function bfsFirstDir(m: Maze, fromX: number, fromY: number): number | null {
+  if (fromX === m.goal.x && fromY === m.goal.y) return null;
+  const n = m.size;
+  const visited = new Uint8Array(n * n);
+  // parentDir[idx] = direction we came from (so we know how to reach it).
+  const parentDir = new Int8Array(n * n).fill(-1);
+  const queue: number[] = [cellIndex(n, fromX, fromY)];
+  visited[queue[0]!] = 1;
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const cx = cur % n;
+    const cy = (cur - cx) / n;
+    if (cx === m.goal.x && cy === m.goal.y) {
+      // Walk back to the cell adjacent to fromX,fromY and return its parentDir.
+      let idx = cur;
+      const fromIdx = cellIndex(n, fromX, fromY);
+      while (true) {
+        const dir = parentDir[idx]!;
+        const [vx, vy] = DIR_VEC[dir]!;
+        const px = (idx % n) - vx;
+        const py = ((idx - (idx % n)) / n) - vy;
+        const pIdx = cellIndex(n, px, py);
+        if (pIdx === fromIdx) return dir;
+        idx = pIdx;
+      }
+    }
+    for (let d = 0; d < 4; d++) {
+      if (hasWall(m, cx, cy, d)) continue;
+      const [vx, vy] = DIR_VEC[d]!;
+      const nx = cx + vx;
+      const ny = cy + vy;
+      if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
+      const nIdx = cellIndex(n, nx, ny);
+      if (visited[nIdx]) continue;
+      visited[nIdx] = 1;
+      parentDir[nIdx] = d;
+      queue.push(nIdx);
+    }
+  }
+  return null;
+}
+
+function resetAutoCache() {
+  autoLastCellX = -1;
+  autoLastCellY = -1;
+  autoDir = null;
+}
+
 /** Skin's default color for a slot (used when no override is stored). */
 function slotDefaultColor(slot: ShapeSlot): string {
   const ref =
@@ -266,6 +328,7 @@ function populateSettings(p: PlayerRecord) {
   characterColorInput.value = p.characterColor ?? slotDefaultColor("character");
   startColorInput.value = p.startColor ?? slotDefaultColor("start");
   goalColorInput.value = p.goalColor ?? slotDefaultColor("goal");
+  autoModeToggle.checked = p.autoMode;
 }
 
 async function onSettingsChanged() {
@@ -286,6 +349,11 @@ async function onSettingsChanged() {
   if (legacyMovementToggle.checked !== legacyMovement) {
     legacyMovement = legacyMovementToggle.checked;
     await setLegacyMovement(legacyMovement);
+  }
+  if (autoModeToggle.checked !== autoMode) {
+    autoMode = autoModeToggle.checked;
+    await setAutoMode(autoMode);
+    resetAutoCache();
   }
   const nextSpeed = Number(speedSelect.value);
   if (Number.isFinite(nextSpeed) && nextSpeed !== speedMultiplier) {
@@ -317,6 +385,16 @@ function frame(now: number) {
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
+    if (autoMode) {
+      if (movement.cellX !== autoLastCellX || movement.cellY !== autoLastCellY) {
+        autoLastCellX = movement.cellX;
+        autoLastCellY = movement.cellY;
+        autoDir = bfsFirstDir(maze, movement.cellX, movement.cellY);
+      }
+      if (autoDir !== null) {
+        queueDirection(maze, movement, autoDir);
+      }
+    }
     const res = step(maze, movement, dt * speedMultiplier, legacyMovement);
     render(
       ctx,
@@ -339,16 +417,20 @@ function frame(now: number) {
 }
 
 async function onCompletion() {
-  const h = await hashMaze(maze);
-  const currentBucket = bucketFor(
-    (await getPlayer())?.mazesCompleted ?? 0,
-  );
-  await recordCompletion(h, maze.size, maze.seed, currentBucket);
+  // Auto mode plays the maze for you — don't credit a score for it.
+  if (!autoMode) {
+    const h = await hashMaze(maze);
+    const currentBucket = bucketFor(
+      (await getPlayer())?.mazesCompleted ?? 0,
+    );
+    await recordCompletion(h, maze.size, maze.seed, currentBucket);
+  }
   const p = await getPlayer();
   if (p) refreshHud(p);
   // Brief pause, then next maze.
   await new Promise((r) => setTimeout(r, 600));
   if (p) await nextRound(p);
+  resetAutoCache();
   completing = false;
 }
 
@@ -359,6 +441,7 @@ async function boot() {
   overrides = overridesFromPlayer(player);
   legacyMovement = player.legacyMovement;
   speedMultiplier = player.speedMultiplier || 1;
+  autoMode = player.autoMode;
   refreshHud(player);
   await nextRound(player);
 
