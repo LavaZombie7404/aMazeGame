@@ -5,6 +5,11 @@ import {
   generateMazeWith,
   hasWall,
   hashMaze,
+  isBridge,
+  N,
+  E,
+  S,
+  W,
   type Maze,
 } from "./maze";
 import { playGoalChime, playWhoosh } from "./sfx";
@@ -119,14 +124,29 @@ let speedMultiplier = 1;
 let autoMode = false;
 let weaveMazes = false;
 /**
- * Precomputed shortest-path solution for the current maze.
- * `pathDir[cellIdx]` = direction to take from that cell to advance along
- * the BFS shortest path toward the goal. `-1` for cells not on the path.
+ * Precomputed shortest-path solution keyed by (cell, entry-axis). Indexed
+ * as `cellIdx * 3 + axis`, where axis ∈ {0 = horizontal (entered via E/W),
+ * 1 = vertical (entered via N/S), 2 = start (no entry yet)}. Value is the
+ * direction to take from that state, or -1 if the state isn't on the
+ * shortest path.
+ *
+ * For non-weave mazes axis is irrelevant — every reachable cell ends up
+ * with the same direction across all three axis slots. For weave mazes
+ * the lookup correctly disambiguates a bridge cell entered horizontally
+ * vs. vertically (it'll point straight-through on the entry axis only).
  */
-let pathDir: Int8Array = new Int8Array(0);
+let pathLookup: Int8Array = new Int8Array(0);
 /**
- * "Invisible" extra walls used in auto mode: all edges not on the solution
- * path are sealed. Renderer ignores this; movement-collision uses it.
+ * Track the dot's last-known cell + entry axis so we can re-derive the
+ * axis on every cell crossing without poking at the WASM dot state.
+ */
+let autoLastCellX = -1;
+let autoLastCellY = -1;
+let autoLastAxis = 2; // start-state sentinel
+/**
+ * "Invisible" extra walls used in auto mode on **non-weave** mazes only.
+ * Seals every edge not on the solution path. Weave mazes don't get this
+ * overlay because state-space BFS already handles bridge constraints.
  */
 let pathExtraWalls: Uint8Array = new Uint8Array(0);
 
@@ -267,84 +287,115 @@ function overridesFromPlayer(p: PlayerRecord): ShapeOverrides {
   };
 }
 
+/** Axis index for a direction: 0 = horizontal (E/W), 1 = vertical (N/S). */
+function axisFor(dir: number): number {
+  return dir === N || dir === S ? 1 : 0;
+}
+
 /**
- * BFS from start to goal, then walk back. Fills:
- *  - `pathDir[cellIdx]` — direction from that cell to the next on the
- *    shortest path (or -1 if the cell is off the path).
- *  - `extraWalls[cellIdx]` — wall mask that *closes every edge not on the
- *    path*. Starts as 0b1111 (all walls) and clears one bit per path edge.
- *    Used by auto mode to seal off side branches without changing what the
- *    renderer draws.
+ * State-space BFS over (cell, entry-axis) pairs. At a non-bridge cell the
+ * axis doesn't constrain transitions; at a bridge cell only same-axis exits
+ * are valid (the perpendicular passage crosses *under*, can't turn into it).
+ *
+ * Returns:
+ *  - `lookup[cellIdx * 3 + axis]` = direction to take from that state on
+ *    the shortest path, or -1 if the state is off the path.
+ *  - `extraWalls[cellIdx]` = invisible-wall overlay sealing off-path edges.
+ *    Only meaningful for non-weave mazes — weave mazes get an empty array
+ *    because a single per-cell mask can't encode the axis-dependent path
+ *    semantics correctly.
  */
 function computePathSolution(
   m: Maze,
-): { pathDir: Int8Array; extraWalls: Uint8Array } {
+  weave: boolean,
+): { lookup: Int8Array; extraWalls: Uint8Array } {
   const n = m.size;
-  const pathDir = new Int8Array(n * n).fill(-1);
-  const extraWalls = new Uint8Array(n * n).fill(0b1111);
-  const visited = new Uint8Array(n * n);
-  const parentDir = new Int8Array(n * n).fill(-1);
+  const stateCount = n * n * 3;
+  const lookup = new Int8Array(stateCount).fill(-1);
+  const extraWalls = weave
+    ? new Uint8Array(0)
+    : new Uint8Array(n * n).fill(0b1111);
   const startIdx = cellIndex(n, m.start.x, m.start.y);
   const goalIdx = cellIndex(n, m.goal.x, m.goal.y);
   if (startIdx === goalIdx) {
-    extraWalls[startIdx] = 0;
-    return { pathDir, extraWalls };
+    if (extraWalls.length > 0) extraWalls[startIdx] = 0;
+    return { lookup, extraWalls };
   }
-  const queue: number[] = [startIdx];
+
+  const visited = new Uint8Array(stateCount);
+  const parentDir = new Int8Array(stateCount).fill(-1);
+  const parentState = new Int32Array(stateCount).fill(-1);
+  const startState = startIdx * 3 + 2;
+  visited[startState] = 1;
+  const queue: number[] = [startState];
   let head = 0;
-  visited[startIdx] = 1;
-  let found = false;
+  let goalState = -1;
   while (head < queue.length) {
-    const cur = queue[head++]!;
-    if (cur === goalIdx) {
-      found = true;
+    const state = queue[head++]!;
+    const cellIdx = (state - (state % 3)) / 3;
+    const axis = state % 3;
+    if (cellIdx === goalIdx) {
+      goalState = state;
       break;
     }
-    const cx = cur % n;
-    const cy = (cur - cx) / n;
+    const cx = cellIdx % n;
+    const cy = (cellIdx - cx) / n;
+    const cellIsBridge = isBridge(m, cx, cy);
     for (let d = 0; d < 4; d++) {
       if (hasWall(m, cx, cy, d)) continue;
+      const dAxis = axisFor(d);
+      if (cellIsBridge && axis !== 2 && axis !== dAxis) continue;
       const [vx, vy] = DIR_VEC[d]!;
       const nx = cx + vx;
       const ny = cy + vy;
       if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
       const nIdx = cellIndex(n, nx, ny);
-      if (visited[nIdx]) continue;
-      visited[nIdx] = 1;
-      parentDir[nIdx] = d;
-      queue.push(nIdx);
+      const nState = nIdx * 3 + dAxis;
+      if (visited[nState]) continue;
+      visited[nState] = 1;
+      parentDir[nState] = d;
+      parentState[nState] = state;
+      queue.push(nState);
     }
   }
-  if (!found) return { pathDir, extraWalls };
-  let idx = goalIdx;
-  while (idx !== startIdx) {
-    const dir = parentDir[idx]!;
+  if (goalState < 0) return { lookup, extraWalls };
+
+  // Walk back recording the direction taken at each path state. For the
+  // non-weave overlay we also clear the corresponding wall bit on both
+  // endpoints of every traversed edge.
+  let cur = goalState;
+  while (cur !== startState) {
+    const dir = parentDir[cur]!;
     if (dir < 0) break;
-    const [vx, vy] = DIR_VEC[dir]!;
-    const px = (idx % n) - vx;
-    const py = ((idx - (idx % n)) / n) - vy;
-    const pIdx = cellIndex(n, px, py);
-    pathDir[pIdx] = dir;
-    extraWalls[pIdx] &= ~(1 << dir);
-    const backDir = (dir + 2) % 4;
-    extraWalls[idx] &= ~(1 << backDir);
-    idx = pIdx;
+    const prev = parentState[cur]!;
+    lookup[prev] = dir;
+    if (extraWalls.length > 0) {
+      const prevCell = (prev - (prev % 3)) / 3;
+      const curCell = (cur - (cur % 3)) / 3;
+      extraWalls[prevCell] &= ~(1 << dir);
+      const backDir = (dir + 2) % 4;
+      extraWalls[curCell] &= ~(1 << backDir);
+    }
+    cur = prev;
   }
-  return { pathDir, extraWalls };
+  return { lookup, extraWalls };
 }
 
 function resetAutoCache() {
-  pathDir = new Int8Array(0);
+  pathLookup = new Int8Array(0);
   pathExtraWalls = new Uint8Array(0);
+  autoLastCellX = -1;
+  autoLastCellY = -1;
+  autoLastAxis = 2;
 }
 
 /** Push (or clear) the auto-mode extra walls into the live movement state. */
 function applyAutoExtraWalls() {
   if (!movement) return;
   if (autoMode) {
-    if (pathExtraWalls.length === 0) {
-      const sol = computePathSolution(maze);
-      pathDir = sol.pathDir;
+    if (pathLookup.length === 0) {
+      const sol = computePathSolution(maze, weaveMazes);
+      pathLookup = sol.lookup;
       pathExtraWalls = sol.extraWalls;
     }
     movement.extraWalls = pathExtraWalls;
@@ -490,14 +541,31 @@ function frame(now: number) {
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
     if (autoMode) {
-      if (pathDir.length === 0) {
-        const sol = computePathSolution(maze);
-        pathDir = sol.pathDir;
+      if (pathLookup.length === 0) {
+        const sol = computePathSolution(maze, weaveMazes);
+        pathLookup = sol.lookup;
         pathExtraWalls = sol.extraWalls;
         movement.extraWalls = pathExtraWalls;
+        autoLastCellX = movement.cellX;
+        autoLastCellY = movement.cellY;
+        autoLastAxis = 2; // start state
       }
-      const idx = cellIndex(maze.size, movement.cellX, movement.cellY);
-      const d = pathDir[idx]!;
+      // Re-derive entry axis whenever the dot crosses a cell border.
+      if (movement.cellX !== autoLastCellX || movement.cellY !== autoLastCellY) {
+        const dx = movement.cellX - autoLastCellX;
+        const dy = movement.cellY - autoLastCellY;
+        let moveDir = -1;
+        if (dx === 0 && dy === -1) moveDir = N;
+        else if (dx === 1 && dy === 0) moveDir = E;
+        else if (dx === 0 && dy === 1) moveDir = S;
+        else if (dx === -1 && dy === 0) moveDir = W;
+        if (moveDir >= 0) autoLastAxis = axisFor(moveDir);
+        autoLastCellX = movement.cellX;
+        autoLastCellY = movement.cellY;
+      }
+      const stateKey =
+        cellIndex(maze.size, movement.cellX, movement.cellY) * 3 + autoLastAxis;
+      const d = pathLookup[stateKey]!;
       if (d >= 0) queueDirection(maze, movement, d);
     }
     const res = step(maze, movement, dt * speedMultiplier, legacyMovement);

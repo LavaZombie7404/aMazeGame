@@ -20,15 +20,19 @@ class GameRuntime(context: Context) {
     private val store = PlayerStore(context)
     private var gamePtr: Long = 0L
 
-    // Precomputed shortest-path solution for the current maze.
-    // pathDir[cellIdx] = direction to take from that cell to advance toward
-    // the goal along the BFS shortest path. -1 for cells off the path.
-    // pathExtraWalls[cellIdx] = wall bits for every direction *not* on the
-    // path — pushed into the core's `extra_walls` overlay when auto is on,
-    // cleared when off.
+    // Precomputed shortest-path solution keyed by (cell, entry-axis). Indexed
+    // as `cellIdx * 3 + axis`, axis ∈ {0 = horizontal (E/W), 1 = vertical
+    // (N/S), 2 = start (no entry yet)}. -1 means the state isn't on the path.
+    // State-space BFS so bridge cells route correctly (entered horizontally
+    // ⇒ exit horizontally; the perpendicular passage is unreachable).
     private var autoSize: Int = 0
-    private var pathDir: IntArray = IntArray(0)
+    private var pathLookup: IntArray = IntArray(0)
+    // Wall overlay sealing off-path edges. Only populated for non-weave
+    // mazes — weave mazes can't be cleanly captured by a per-cell mask.
     private var pathExtraWalls: ByteArray = ByteArray(0)
+    private var autoLastCellX: Int = -1
+    private var autoLastCellY: Int = -1
+    private var autoLastAxis: Int = 2 // start-state sentinel
 
     private val _state = MutableStateFlow(GameState.EMPTY)
     val state: StateFlow<GameState> = _state
@@ -80,6 +84,9 @@ class GameRuntime(context: Context) {
     fun setAutoMode(value: Boolean) {
         store.autoMode = value
         _player.value = _player.value.copy(autoMode = value)
+        autoLastCellX = -1
+        autoLastCellY = -1
+        autoLastAxis = 2
         applyExtraWalls()
     }
 
@@ -139,28 +146,53 @@ class GameRuntime(context: Context) {
         gamePtr = bridge.gameNewExt(size, seed, _player.value.weaveMazes)
         // Per-game flag — re-apply on each new round.
         bridge.setLegacyMovement(gamePtr, _player.value.legacyMovement)
-        // Precompute the shortest-path solution table + invisible-walls mask
-        // for the auto-solver.
+        // Precompute the shortest-path solution table + (for non-weave only)
+        // an invisible-walls mask for the auto-solver.
         val walls = bridge.mazeWalls(gamePtr)
         val mSize = bridge.mazeSize(gamePtr)
         val start = bridge.mazeStart(gamePtr)
         val goal = bridge.mazeGoal(gamePtr)
         autoSize = mSize
-        val solution = computePathSolution(walls, mSize, start[0], start[1], goal[0], goal[1])
-        pathDir = solution.first
+        val solution = computePathSolution(
+            walls, mSize, start[0], start[1], goal[0], goal[1],
+            weave = _player.value.weaveMazes,
+        )
+        pathLookup = solution.first
         pathExtraWalls = solution.second
+        autoLastCellX = start[0]
+        autoLastCellY = start[1]
+        autoLastAxis = 2
         applyExtraWalls()
         publish()
     }
 
     fun tick(dtMs: Int): Boolean {
-        // Auto-solver: look up the precomputed direction for the player's
-        // current logical cell and queue it. queue_direction is idempotent
-        // on a same-direction call so re-queueing every tick is cheap.
-        if (_player.value.autoMode && autoSize > 0 && pathDir.isNotEmpty()) {
+        // Auto-solver: look up the precomputed direction for the dot's
+        // current (cell, entry-axis) state. queue_direction is idempotent on
+        // a same-direction call so re-queueing every tick is cheap.
+        if (_player.value.autoMode && autoSize > 0 && pathLookup.isNotEmpty()) {
             val cell = bridge.playerCell(gamePtr)
-            val idx = cell[1] * autoSize + cell[0]
-            val d = pathDir.getOrNull(idx) ?: -1
+            val cx = cell[0]
+            val cy = cell[1]
+            // Re-derive entry axis whenever the dot crosses a cell border.
+            if (cx != autoLastCellX || cy != autoLastCellY) {
+                val dx = cx - autoLastCellX
+                val dy = cy - autoLastCellY
+                val moveDir = when {
+                    dx == 0 && dy == -1 -> 0 // N
+                    dx == 1 && dy == 0 -> 1  // E
+                    dx == 0 && dy == 1 -> 2  // S
+                    dx == -1 && dy == 0 -> 3 // W
+                    else -> -1
+                }
+                if (moveDir >= 0) {
+                    autoLastAxis = if (moveDir == 0 || moveDir == 2) 1 else 0
+                }
+                autoLastCellX = cx
+                autoLastCellY = cy
+            }
+            val stateKey = (cy * autoSize + cx) * 3 + autoLastAxis
+            val d = pathLookup.getOrNull(stateKey) ?: -1
             if (d >= 0) bridge.queueDirection(gamePtr, d)
         }
 
@@ -194,76 +226,91 @@ class GameRuntime(context: Context) {
     }
 
     /**
-     * BFS start → goal, then walk back. Returns
-     *   `first`  = IntArray of size N² where path cells hold the direction
-     *              to the next cell on the shortest path, and off-path cells
-     *              hold -1.
-     *   `second` = ByteArray of size N² holding a wall mask whose bits are
-     *              set for every direction *not* on the path. Pushed into
-     *              the core's `extra_walls` overlay so the walker is locked
-     *              onto the path without altering the rendered maze.
+     * State-space BFS over (cell, entry-axis) pairs. At a bridge cell only
+     * same-axis exits are valid (the perpendicular passage crosses *under*).
+     * Returns
+     *   `first`  = IntArray of size N²×3 where each `cellIdx*3+axis` slot
+     *              holds the direction to take from that state on the
+     *              shortest path, or -1 if the state is off the path.
+     *              axis: 0 = horizontal entry (E/W), 1 = vertical (N/S),
+     *              2 = start (no entry yet).
+     *   `second` = ByteArray of size N² with bits set for every wall not on
+     *              the path. Only meaningful for non-weave mazes — weave
+     *              returns an empty array because the per-axis path
+     *              semantics can't be encoded in a single per-cell mask.
      */
     private fun computePathSolution(
         walls: ByteArray, size: Int,
         startX: Int, startY: Int,
         goalX: Int, goalY: Int,
+        weave: Boolean,
     ): Pair<IntArray, ByteArray> {
-        val dirs = IntArray(size * size) { -1 }
-        val extra = ByteArray(size * size) { 0b1111.toByte() }
+        val stateCount = size * size * 3
+        val lookup = IntArray(stateCount) { -1 }
+        val extra = if (weave) ByteArray(0) else ByteArray(size * size) { 0b1111.toByte() }
         val startIdx = startY * size + startX
         val goalIdx = goalY * size + goalX
         if (startIdx == goalIdx) {
-            extra[startIdx] = 0
-            return dirs to extra
+            if (extra.isNotEmpty()) extra[startIdx] = 0
+            return lookup to extra
         }
 
-        val visited = BooleanArray(size * size)
-        val parentDir = IntArray(size * size) { -1 }
-        val queue = ArrayDeque<Int>()
-        queue.addLast(startIdx)
-        visited[startIdx] = true
+        val visited = BooleanArray(stateCount)
+        val parentDir = IntArray(stateCount) { -1 }
+        val parentState = IntArray(stateCount) { -1 }
         val vx = intArrayOf(0, 1, 0, -1)
         val vy = intArrayOf(-1, 0, 1, 0)
-        var found = false
+        val startState = startIdx * 3 + 2
+        visited[startState] = true
+        val queue = ArrayDeque<Int>()
+        queue.addLast(startState)
+        var goalState = -1
         while (queue.isNotEmpty()) {
-            val cur = queue.removeFirst()
-            if (cur == goalIdx) {
-                found = true
+            val state = queue.removeFirst()
+            val cellIdx = state / 3
+            val axis = state % 3
+            if (cellIdx == goalIdx) {
+                goalState = state
                 break
             }
-            val cx = cur % size
-            val cy = cur / size
-            val mask = walls[cur].toInt() and 0xff
+            val cx = cellIdx % size
+            val cy = cellIdx / size
+            val mask = walls[cellIdx].toInt() and 0xff
+            val cellIsBridge = (mask and 0b00010000) != 0
             for (d in 0..3) {
                 if (mask and (1 shl d) != 0) continue
+                val dAxis = if (d == 0 || d == 2) 1 else 0
+                if (cellIsBridge && axis != 2 && axis != dAxis) continue
                 val nx = cx + vx[d]
                 val ny = cy + vy[d]
                 if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue
                 val nIdx = ny * size + nx
-                if (visited[nIdx]) continue
-                visited[nIdx] = true
-                parentDir[nIdx] = d
-                queue.addLast(nIdx)
+                val nState = nIdx * 3 + dAxis
+                if (visited[nState]) continue
+                visited[nState] = true
+                parentDir[nState] = d
+                parentState[nState] = state
+                queue.addLast(nState)
             }
         }
-        if (!found) return dirs to extra
+        if (goalState < 0) return lookup to extra
 
-        var idx = goalIdx
-        while (idx != startIdx) {
-            val dir = parentDir[idx]
+        var cur = goalState
+        while (cur != startState) {
+            val dir = parentDir[cur]
             if (dir < 0) break
-            val px = (idx % size) - vx[dir]
-            val py = (idx / size) - vy[dir]
-            val pIdx = py * size + px
-            dirs[pIdx] = dir
-            // Clear the forward-direction wall at the parent and the
-            // backward-direction wall at the child on the path edge.
-            extra[pIdx] = (extra[pIdx].toInt() and (1 shl dir).inv()).toByte()
-            val backDir = (dir + 2) % 4
-            extra[idx] = (extra[idx].toInt() and (1 shl backDir).inv()).toByte()
-            idx = pIdx
+            val prev = parentState[cur]
+            lookup[prev] = dir
+            if (extra.isNotEmpty()) {
+                val prevCell = prev / 3
+                val curCell = cur / 3
+                extra[prevCell] = (extra[prevCell].toInt() and (1 shl dir).inv()).toByte()
+                val backDir = (dir + 2) % 4
+                extra[curCell] = (extra[curCell].toInt() and (1 shl backDir).inv()).toByte()
+            }
+            cur = prev
         }
-        return dirs to extra
+        return lookup to extra
     }
 
     fun queue(direction: Direction) {
