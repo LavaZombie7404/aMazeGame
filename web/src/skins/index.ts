@@ -5,12 +5,14 @@ import {
   geometryDashMeltdownSkin,
   geometryDashSubZeroSkin,
 } from "./geometry-dash";
+import { galaxySkin } from "./galaxy";
 
 const REGISTRY: Record<string, Skin> = {
   [mathTextbookSkin.id]: mathTextbookSkin,
   [geometryDashClassicSkin.id]: geometryDashClassicSkin,
   [geometryDashSubZeroSkin.id]: geometryDashSubZeroSkin,
   [geometryDashMeltdownSkin.id]: geometryDashMeltdownSkin,
+  [galaxySkin.id]: galaxySkin,
 };
 
 export const DEFAULT_SKIN_ID = mathTextbookSkin.id;

@@ -152,6 +152,7 @@ private val REGISTRY: Map<String, Skin> = listOf(
     GeometryDashClassicSkin,
     GeometryDashSubZeroSkin,
     GeometryDashMeltdownSkin,
+    GalaxySkin,
 ).associateBy { it.id }
 
 fun listSkins(): List<Skin> = REGISTRY.values.toList()
