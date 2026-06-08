@@ -22,6 +22,7 @@ import {
   setPlayerName,
   setShapeOverride,
   setSkinId,
+  setSpeedMultiplier,
   wasGeneratedThisSession,
   type DifficultyBucket,
   type PlayerRecord,
@@ -63,6 +64,9 @@ const goalShapeSelect = document.getElementById(
 const legacyMovementToggle = document.getElementById(
   "legacy-movement-toggle",
 ) as HTMLInputElement;
+const speedSelect = document.getElementById("speed-select") as HTMLSelectElement;
+
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.5, 2, 3] as const;
 
 let maze: Maze;
 let movement: MovementState;
@@ -70,6 +74,7 @@ let metrics: ViewMetrics;
 let skin: Skin;
 let overrides: ShapeOverrides = { character: null, start: null, goal: null };
 let legacyMovement = false;
+let speedMultiplier = 1;
 
 /** PRD §6.0 — alternate simple ↔ complex buckets across rounds. */
 function bucketFor(mazesCompleted: number): DifficultyBucket {
@@ -201,6 +206,12 @@ function populateSettings(p: PlayerRecord) {
   populateShapeSelect(startShapeSelect, p.startOverride);
   populateShapeSelect(goalShapeSelect, p.goalOverride);
   legacyMovementToggle.checked = p.legacyMovement;
+  // Snap saved speed to the closest preset option so we don't leave it on a
+  // foreign value that the dropdown can't display.
+  const closest = SPEED_OPTIONS.reduce((best, v) =>
+    Math.abs(v - p.speedMultiplier) < Math.abs(best - p.speedMultiplier) ? v : best,
+  );
+  speedSelect.value = String(closest);
 }
 
 async function onSettingsChanged() {
@@ -222,6 +233,11 @@ async function onSettingsChanged() {
     legacyMovement = legacyMovementToggle.checked;
     await setLegacyMovement(legacyMovement);
   }
+  const nextSpeed = Number(speedSelect.value);
+  if (Number.isFinite(nextSpeed) && nextSpeed !== speedMultiplier) {
+    speedMultiplier = nextSpeed;
+    await setSpeedMultiplier(speedMultiplier);
+  }
   const p = await getPlayer();
   if (p) {
     overrides = overridesFromPlayer(p);
@@ -236,7 +252,7 @@ function frame(now: number) {
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
-    const res = step(maze, movement, dt, legacyMovement);
+    const res = step(maze, movement, dt * speedMultiplier, legacyMovement);
     render(
       ctx,
       {
@@ -277,6 +293,7 @@ async function boot() {
   applySkinToDom(skin);
   overrides = overridesFromPlayer(player);
   legacyMovement = player.legacyMovement;
+  speedMultiplier = player.speedMultiplier || 1;
   refreshHud(player);
   await nextRound(player);
 

@@ -30,6 +30,17 @@ import com.lavazombie.amazegame.ui.skins.listSkins
 
 private const val SHAPE_DEFAULT_LABEL = "(skin default)"
 
+private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f)
+
+private fun speedLabel(v: Float): String = when (v) {
+    1.0f -> "1× (default)"
+    else -> {
+        // Trim trailing ".0" so 2.0 shows as "2×".
+        val s = if (v % 1f == 0f) v.toInt().toString() else v.toString()
+        "${s}×"
+    }
+}
+
 /**
  * Skin + per-shape override picker. Mirrors `web/src/main.ts::populateSettings`
  * + the matching dialog in `web/index.html`. Mirrors the web rule that the
@@ -42,9 +53,11 @@ fun SettingsDialog(
     startOverride: String?,
     goalOverride: String?,
     legacyMovement: Boolean,
+    speedMultiplier: Float,
     onSkinChange: (String) -> Unit,
     onShapeChange: (PlayerStore.ShapeSlot, String?) -> Unit,
     onLegacyMovementChange: (Boolean) -> Unit,
+    onSpeedMultiplierChange: (Float) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val skins = listSkins()
@@ -82,9 +95,44 @@ fun SettingsDialog(
                     enabled = legacyMovement,
                     onChange = onLegacyMovementChange,
                 )
+                SpeedPicker(
+                    current = speedMultiplier,
+                    onChange = onSpeedMultiplierChange,
+                )
             }
         },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SpeedPicker(current: Float, onChange: (Float) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val active = SPEED_OPTIONS.minByOrNull { kotlin.math.abs(it - current) }
+        ?: 1.0f
+    Column {
+        Text("Speed", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+            OutlinedTextField(
+                value = speedLabel(active),
+                onValueChange = {},
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = open) },
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+            )
+            ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                SPEED_OPTIONS.forEach { v ->
+                    DropdownMenuItem(
+                        text = { Text(speedLabel(v)) },
+                        onClick = {
+                            open = false
+                            onChange(v)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

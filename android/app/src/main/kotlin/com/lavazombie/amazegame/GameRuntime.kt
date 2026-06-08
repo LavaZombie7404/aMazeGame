@@ -57,6 +57,11 @@ class GameRuntime(context: Context) {
         if (gamePtr != 0L) bridge.setLegacyMovement(gamePtr, value)
     }
 
+    fun setSpeedMultiplier(value: Float) {
+        store.speedMultiplier = value
+        _player.value = _player.value.copy(speedMultiplier = value)
+    }
+
     fun reset() {
         nextRound(size = pickSize())
     }
@@ -70,7 +75,11 @@ class GameRuntime(context: Context) {
     }
 
     fun tick(dtMs: Int): Boolean {
-        val flags = bridge.step(gamePtr, dtMs)
+        val scaled = (dtMs * _player.value.speedMultiplier)
+            .coerceAtLeast(0f)
+            .toInt()
+            .coerceAtLeast(1)
+        val flags = bridge.step(gamePtr, scaled)
         publish()
         val reachedGoal = (flags and 1) != 0
         if (reachedGoal) {
@@ -115,6 +124,7 @@ class GameRuntime(context: Context) {
         skin = getSkin(store.skinId.ifBlank { DEFAULT_SKIN_ID }),
         overrides = loadOverrides(),
         legacyMovement = store.legacyMovement,
+        speedMultiplier = store.speedMultiplier,
     )
 
     private fun loadOverrides() = ShapeOverrides(
@@ -132,6 +142,7 @@ data class PlayerState(
     val skin: Skin,
     val overrides: ShapeOverrides,
     val legacyMovement: Boolean = false,
+    val speedMultiplier: Float = 1f,
 )
 
 /**

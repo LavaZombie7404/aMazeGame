@@ -64,11 +64,13 @@ fun MainScreen(game: GameRuntime) {
             startOverride = player.overrides.start,
             goalOverride = player.overrides.goal,
             legacyMovement = player.legacyMovement,
+            speedMultiplier = player.speedMultiplier,
             onSkinChange = { game.setSkin(it) },
             onShapeChange = { slot: PlayerStore.ShapeSlot, name: String? ->
                 game.setShapeOverride(slot, name)
             },
             onLegacyMovementChange = { game.setLegacyMovement(it) },
+            onSpeedMultiplierChange = { game.setSpeedMultiplier(it) },
             onDismiss = { settingsOpen = false },
         )
     }
