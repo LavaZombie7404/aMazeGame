@@ -42,16 +42,23 @@ class PlayerStore(context: Context) {
         }.apply()
     }
 
+    fun colorOverride(slot: ShapeSlot): String? = sp.getString(slot.colorKey, null)
+    fun setColorOverride(slot: ShapeSlot, hex: String?) {
+        sp.edit().apply {
+            if (hex == null) remove(slot.colorKey) else putString(slot.colorKey, hex)
+        }.apply()
+    }
+
     fun incrementMazesCompleted(): Int {
         val next = mazesCompleted + 1
         mazesCompleted = next
         return next
     }
 
-    enum class ShapeSlot(val key: String) {
-        Character("shape_character"),
-        Start("shape_start"),
-        Goal("shape_goal"),
+    enum class ShapeSlot(val key: String, val colorKey: String) {
+        Character("shape_character", "color_character"),
+        Start("shape_start", "color_start"),
+        Goal("shape_goal", "color_goal"),
     }
 
     companion object {

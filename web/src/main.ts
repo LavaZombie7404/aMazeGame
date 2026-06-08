@@ -18,6 +18,7 @@ import {
   hasSeenMaze,
   markGenerated,
   recordCompletion,
+  setColorOverride,
   setLegacyMovement,
   setPlayerName,
   setShapeOverride,
@@ -28,6 +29,7 @@ import {
   type PlayerRecord,
   type ShapeSlot,
 } from "./storage";
+import type { ShapeRef } from "./shapes";
 import { mulberry32, randomSeed } from "./rng";
 import { DEFAULT_SKIN_ID, getSkin, listSkins, type Skin } from "./skins";
 import { listShapes } from "./shapes";
@@ -65,6 +67,24 @@ const legacyMovementToggle = document.getElementById(
   "legacy-movement-toggle",
 ) as HTMLInputElement;
 const speedSelect = document.getElementById("speed-select") as HTMLSelectElement;
+const characterColorInput = document.getElementById(
+  "character-color-input",
+) as HTMLInputElement;
+const startColorInput = document.getElementById(
+  "start-color-input",
+) as HTMLInputElement;
+const goalColorInput = document.getElementById(
+  "goal-color-input",
+) as HTMLInputElement;
+const characterColorReset = document.getElementById(
+  "character-color-reset",
+) as HTMLButtonElement;
+const startColorReset = document.getElementById(
+  "start-color-reset",
+) as HTMLButtonElement;
+const goalColorReset = document.getElementById(
+  "goal-color-reset",
+) as HTMLButtonElement;
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.5, 2, 3] as const;
 
@@ -154,14 +174,45 @@ function applySkinToDom(s: Skin) {
   root.style.setProperty("--skin-font", s.font);
 }
 
+function buildOverrideRef(
+  base: ShapeRef,
+  shapeName: string | null,
+  color: string | null,
+): ShapeRef | null {
+  if (!shapeName && !color) return null;
+  const style = color
+    ? { ...(base.style ?? {}), fill: color, stroke: color, innerFill: color }
+    : base.style;
+  return {
+    name: shapeName ?? base.name,
+    style,
+    sizeFactor: base.sizeFactor,
+  };
+}
+
 function overridesFromPlayer(p: PlayerRecord): ShapeOverrides {
   return {
-    character: p.characterOverride
-      ? { ...skin.character, name: p.characterOverride }
-      : null,
-    start: p.startOverride ? { ...skin.start, name: p.startOverride } : null,
-    goal: p.goalOverride ? { ...skin.goal, name: p.goalOverride } : null,
+    character: buildOverrideRef(skin.character, p.characterOverride, p.characterColor),
+    start: buildOverrideRef(skin.start, p.startOverride, p.startColor),
+    goal: buildOverrideRef(skin.goal, p.goalOverride, p.goalColor),
   };
+}
+
+/** Skin's default color for a slot (used when no override is stored). */
+function slotDefaultColor(slot: ShapeSlot): string {
+  const ref =
+    slot === "character" ? skin.character : slot === "start" ? skin.start : skin.goal;
+  return ref.style?.fill ?? ref.style?.stroke ?? ref.style?.innerFill ?? "#000000";
+}
+
+async function currentStoredColor(slot: ShapeSlot): Promise<string | null> {
+  const p = await getPlayer();
+  if (!p) return null;
+  return slot === "character"
+    ? p.characterColor
+    : slot === "start"
+      ? p.startColor
+      : p.goalColor;
 }
 
 function refreshHud(p: PlayerRecord) {
@@ -212,6 +263,9 @@ function populateSettings(p: PlayerRecord) {
     Math.abs(v - p.speedMultiplier) < Math.abs(best - p.speedMultiplier) ? v : best,
   );
   speedSelect.value = String(closest);
+  characterColorInput.value = p.characterColor ?? slotDefaultColor("character");
+  startColorInput.value = p.startColor ?? slotDefaultColor("start");
+  goalColorInput.value = p.goalColor ?? slotDefaultColor("goal");
 }
 
 async function onSettingsChanged() {
@@ -237,6 +291,17 @@ async function onSettingsChanged() {
   if (Number.isFinite(nextSpeed) && nextSpeed !== speedMultiplier) {
     speedMultiplier = nextSpeed;
     await setSpeedMultiplier(speedMultiplier);
+  }
+  const colorSlots: Array<[ShapeSlot, HTMLInputElement, string | null]> = [
+    ["character", characterColorInput, await currentStoredColor("character")],
+    ["start", startColorInput, await currentStoredColor("start")],
+    ["goal", goalColorInput, await currentStoredColor("goal")],
+  ];
+  for (const [slot, input, stored] of colorSlots) {
+    const v = input.value;
+    if (v && v !== stored) {
+      await setColorOverride(slot, v);
+    }
   }
   const p = await getPlayer();
   if (p) {
@@ -319,6 +384,23 @@ async function boot() {
   settingsDialog.addEventListener("close", () => {
     void onSettingsChanged();
   });
+
+  // "Reset to skin default" buttons null out the stored color and snap the
+  // picker back to whatever the active skin says for that slot.
+  const resetPairs: Array<[HTMLButtonElement, HTMLInputElement, ShapeSlot]> = [
+    [characterColorReset, characterColorInput, "character"],
+    [startColorReset, startColorInput, "start"],
+    [goalColorReset, goalColorInput, "goal"],
+  ];
+  for (const [btn, input, slot] of resetPairs) {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      input.value = slotDefaultColor(slot);
+      await setColorOverride(slot, null);
+      const p = await getPlayer();
+      if (p) overrides = overridesFromPlayer(p);
+    });
+  }
 
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", resize);

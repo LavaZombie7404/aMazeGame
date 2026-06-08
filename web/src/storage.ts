@@ -17,6 +17,9 @@ export interface PlayerRecord {
   goalOverride: string | null;
   legacyMovement: boolean;
   speedMultiplier: number;
+  characterColor: string | null;
+  startColor: string | null;
+  goalColor: string | null;
 }
 
 let SQL: SqlJsStatic | null = null;
@@ -104,6 +107,12 @@ const migrations: Array<(db: Database) => void> = [
       `ALTER TABLE player ADD COLUMN speed_multiplier REAL NOT NULL DEFAULT 1.0`,
     );
   },
+  // v5 — per-slot color overrides; null = inherit from skin.
+  (db) => {
+    db.run(`ALTER TABLE player ADD COLUMN character_color TEXT`);
+    db.run(`ALTER TABLE player ADD COLUMN start_color TEXT`);
+    db.run(`ALTER TABLE player ADD COLUMN goal_color TEXT`);
+  },
 ];
 
 function migrate(db: Database): void {
@@ -134,7 +143,8 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
   const res = db.exec(
     `SELECT name, mazes_completed, skin_id,
             character_shape, start_shape, goal_shape,
-            legacy_movement, speed_multiplier
+            legacy_movement, speed_multiplier,
+            character_color, start_color, goal_color
        FROM player WHERE id = 1`,
   );
   if (res.length === 0 || res[0]!.values.length === 0) return null;
@@ -148,6 +158,9 @@ export async function getPlayer(): Promise<PlayerRecord | null> {
     goalOverride: row[5] === null ? null : String(row[5]),
     legacyMovement: Number(row[6]) !== 0,
     speedMultiplier: Number(row[7]),
+    characterColor: row[8] === null ? null : String(row[8]),
+    startColor: row[9] === null ? null : String(row[9]),
+    goalColor: row[10] === null ? null : String(row[10]),
   };
 }
 
@@ -191,6 +204,21 @@ export async function setShapeOverride(
         : "goal_shape";
   const db = await getDb();
   db.run(`UPDATE player SET ${column} = ? WHERE id = 1`, [shape]);
+  await persist();
+}
+
+export async function setColorOverride(
+  slot: ShapeSlot,
+  color: string | null,
+): Promise<void> {
+  const column =
+    slot === "character"
+      ? "character_color"
+      : slot === "start"
+        ? "start_color"
+        : "goal_color";
+  const db = await getDb();
+  db.run(`UPDATE player SET ${column} = ? WHERE id = 1`, [color]);
   await persist();
 }
 

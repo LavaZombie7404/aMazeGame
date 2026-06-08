@@ -1,9 +1,16 @@
 package com.lavazombie.amazegame.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -14,6 +21,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +41,19 @@ import com.lavazombie.amazegame.ui.skins.listSkins
 private const val SHAPE_DEFAULT_LABEL = "(skin default)"
 
 private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f)
+
+private val COLOR_PALETTE = listOf(
+    "#c83b3b", // red (math-textbook character default)
+    "#2f6fb8", // blue (math-textbook goal default)
+    "#2a3450", // ink soft (math-textbook start default)
+    "#2e8b57", // green
+    "#ffd700", // gold
+    "#ff8c00", // orange
+    "#8e4fb0", // purple
+    "#e91e63", // pink
+    "#00bcd4", // cyan
+    "#1d2433", // ink (near-black)
+)
 
 private fun speedLabel(v: Float): String = when (v) {
     1.0f -> "1× (default)"
@@ -52,10 +75,14 @@ fun SettingsDialog(
     characterOverride: String?,
     startOverride: String?,
     goalOverride: String?,
+    characterColor: String?,
+    startColor: String?,
+    goalColor: String?,
     legacyMovement: Boolean,
     speedMultiplier: Float,
     onSkinChange: (String) -> Unit,
     onShapeChange: (PlayerStore.ShapeSlot, String?) -> Unit,
+    onColorChange: (PlayerStore.ShapeSlot, String?) -> Unit,
     onLegacyMovementChange: (Boolean) -> Unit,
     onSpeedMultiplierChange: (Float) -> Unit,
     onDismiss: () -> Unit,
@@ -81,15 +108,30 @@ fun SettingsDialog(
                     current = characterOverride,
                     onChange = { onShapeChange(PlayerStore.ShapeSlot.Character, it) },
                 )
+                ColorPicker(
+                    label = "Character color",
+                    current = characterColor,
+                    onChange = { onColorChange(PlayerStore.ShapeSlot.Character, it) },
+                )
                 ShapePicker(
                     label = "Start marker",
                     current = startOverride,
                     onChange = { onShapeChange(PlayerStore.ShapeSlot.Start, it) },
                 )
+                ColorPicker(
+                    label = "Start color",
+                    current = startColor,
+                    onChange = { onColorChange(PlayerStore.ShapeSlot.Start, it) },
+                )
                 ShapePicker(
                     label = "Goal marker",
                     current = goalOverride,
                     onChange = { onShapeChange(PlayerStore.ShapeSlot.Goal, it) },
+                )
+                ColorPicker(
+                    label = "Goal color",
+                    current = goalColor,
+                    onChange = { onColorChange(PlayerStore.ShapeSlot.Goal, it) },
                 )
                 LegacyMovementToggle(
                     enabled = legacyMovement,
@@ -102,6 +144,57 @@ fun SettingsDialog(
             }
         },
     )
+}
+
+@Composable
+private fun ColorPicker(label: String, current: String?, onChange: (String?) -> Unit) {
+    Column {
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // "Use default" swatch — neutral grey with a slash, clears the override.
+            ColorSwatch(
+                color = Color(0xFFE0E0E0),
+                selected = current == null,
+                showSlash = true,
+                onClick = { onChange(null) },
+            )
+            COLOR_PALETTE.forEach { hex ->
+                ColorSwatch(
+                    color = Color(android.graphics.Color.parseColor(hex)),
+                    selected = current?.equals(hex, ignoreCase = true) == true,
+                    onClick = { onChange(hex) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColorSwatch(
+    color: Color,
+    selected: Boolean,
+    showSlash: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val borderWidth = if (selected) 2.5.dp else 1.dp
+    val borderColor = if (selected) Color(0xFF1D2433) else Color(0xFF888888)
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(color)
+            .border(BorderStroke(borderWidth, borderColor), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (showSlash) {
+            Text("/", color = Color(0xFF555555), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

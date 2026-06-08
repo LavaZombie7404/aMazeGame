@@ -63,11 +63,17 @@ fun MainScreen(game: GameRuntime) {
             characterOverride = player.overrides.character,
             startOverride = player.overrides.start,
             goalOverride = player.overrides.goal,
+            characterColor = player.overrides.characterColor,
+            startColor = player.overrides.startColor,
+            goalColor = player.overrides.goalColor,
             legacyMovement = player.legacyMovement,
             speedMultiplier = player.speedMultiplier,
             onSkinChange = { game.setSkin(it) },
             onShapeChange = { slot: PlayerStore.ShapeSlot, name: String? ->
                 game.setShapeOverride(slot, name)
+            },
+            onColorChange = { slot: PlayerStore.ShapeSlot, hex: String? ->
+                game.setColorOverride(slot, hex)
             },
             onLegacyMovementChange = { game.setLegacyMovement(it) },
             onSpeedMultiplierChange = { game.setSpeedMultiplier(it) },

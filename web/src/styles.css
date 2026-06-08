@@ -182,6 +182,28 @@ dialog label.checkbox-row input[type="checkbox"] {
   cursor: pointer;
 }
 
+dialog .color-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+dialog .color-row input[type="color"] {
+  width: 3rem;
+  height: 2.1rem;
+  padding: 0.2rem;
+  cursor: pointer;
+}
+
+dialog .color-reset {
+  font-size: 0.8rem;
+  padding: 0.4rem 0.7rem;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1.2px solid var(--ink-soft);
+  cursor: pointer;
+}
+
 dialog menu {
   display: flex;
   justify-content: flex-end;

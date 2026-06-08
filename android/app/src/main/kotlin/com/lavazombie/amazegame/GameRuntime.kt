@@ -51,6 +51,11 @@ class GameRuntime(context: Context) {
         _player.value = _player.value.copy(overrides = loadOverrides())
     }
 
+    fun setColorOverride(slot: PlayerStore.ShapeSlot, hex: String?) {
+        store.setColorOverride(slot, hex)
+        _player.value = _player.value.copy(overrides = loadOverrides())
+    }
+
     fun setLegacyMovement(value: Boolean) {
         store.legacyMovement = value
         _player.value = _player.value.copy(legacyMovement = value)
@@ -131,6 +136,9 @@ class GameRuntime(context: Context) {
         character = store.shapeOverride(PlayerStore.ShapeSlot.Character),
         start = store.shapeOverride(PlayerStore.ShapeSlot.Start),
         goal = store.shapeOverride(PlayerStore.ShapeSlot.Goal),
+        characterColor = store.colorOverride(PlayerStore.ShapeSlot.Character),
+        startColor = store.colorOverride(PlayerStore.ShapeSlot.Start),
+        goalColor = store.colorOverride(PlayerStore.ShapeSlot.Goal),
     )
 }
 
@@ -153,15 +161,39 @@ data class ShapeOverrides(
     val character: String? = null,
     val start: String? = null,
     val goal: String? = null,
+    /** Hex strings like "#c83b3b"; null = inherit skin default. */
+    val characterColor: String? = null,
+    val startColor: String? = null,
+    val goalColor: String? = null,
 )
 
 fun ShapeOverrides.apply(slot: PlayerStore.ShapeSlot, base: ShapeRef): ShapeRef {
-    val override = when (slot) {
+    val shapeName = when (slot) {
         PlayerStore.ShapeSlot.Character -> character
         PlayerStore.ShapeSlot.Start -> start
         PlayerStore.ShapeSlot.Goal -> goal
-    } ?: return base
-    return base.copy(name = override)
+    }
+    val colorHex = when (slot) {
+        PlayerStore.ShapeSlot.Character -> characterColor
+        PlayerStore.ShapeSlot.Start -> startColor
+        PlayerStore.ShapeSlot.Goal -> goalColor
+    }
+    val withName = if (shapeName != null) base.copy(name = shapeName) else base
+    if (colorHex == null) return withName
+    val color = parseColor(colorHex) ?: return withName
+    return withName.copy(
+        style = withName.style.copy(
+            fill = color,
+            stroke = color,
+            innerFill = color,
+        ),
+    )
+}
+
+private fun parseColor(hex: String): androidx.compose.ui.graphics.Color? = try {
+    androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(hex))
+} catch (_: IllegalArgumentException) {
+    null
 }
 
 data class GameState(
