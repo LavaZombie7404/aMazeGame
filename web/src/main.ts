@@ -7,9 +7,7 @@ import {
   hashMaze,
   isBridge,
   N,
-  E,
   S,
-  W,
   type Maze,
 } from "./maze";
 import { playGoalChime, playWhoosh } from "./sfx";
@@ -136,13 +134,6 @@ let weaveMazes = false;
  * vs. vertically (it'll point straight-through on the entry axis only).
  */
 let pathLookup: Int8Array = new Int8Array(0);
-/**
- * Track the dot's last-known cell + entry axis so we can re-derive the
- * axis on every cell crossing without poking at the WASM dot state.
- */
-let autoLastCellX = -1;
-let autoLastCellY = -1;
-let autoLastAxis = 2; // start-state sentinel
 /**
  * "Invisible" extra walls used in auto mode on **non-weave** mazes only.
  * Seals every edge not on the solution path. Weave mazes don't get this
@@ -384,9 +375,6 @@ function computePathSolution(
 function resetAutoCache() {
   pathLookup = new Int8Array(0);
   pathExtraWalls = new Uint8Array(0);
-  autoLastCellX = -1;
-  autoLastCellY = -1;
-  autoLastAxis = 2;
 }
 
 /** Push (or clear) the auto-mode extra walls into the live movement state. */
@@ -546,25 +534,14 @@ function frame(now: number) {
         pathLookup = sol.lookup;
         pathExtraWalls = sol.extraWalls;
         movement.extraWalls = pathExtraWalls;
-        autoLastCellX = movement.cellX;
-        autoLastCellY = movement.cellY;
-        autoLastAxis = 2; // start state
       }
-      // Re-derive entry axis whenever the dot crosses a cell border.
-      if (movement.cellX !== autoLastCellX || movement.cellY !== autoLastCellY) {
-        const dx = movement.cellX - autoLastCellX;
-        const dy = movement.cellY - autoLastCellY;
-        let moveDir = -1;
-        if (dx === 0 && dy === -1) moveDir = N;
-        else if (dx === 1 && dy === 0) moveDir = E;
-        else if (dx === 0 && dy === 1) moveDir = S;
-        else if (dx === -1 && dy === 0) moveDir = W;
-        if (moveDir >= 0) autoLastAxis = axisFor(moveDir);
-        autoLastCellX = movement.cellX;
-        autoLastCellY = movement.cellY;
-      }
+      // Derive entry axis straight from the dot's live direction. Falling
+      // back to cellX/Y deltas missed cases where the corridor auto-route
+      // crossed multiple cells in a single tick and the delta wasn't a
+      // pure-axis vector.
+      const axis = movement.dir === null ? 2 : axisFor(movement.dir);
       const stateKey =
-        cellIndex(maze.size, movement.cellX, movement.cellY) * 3 + autoLastAxis;
+        cellIndex(maze.size, movement.cellX, movement.cellY) * 3 + axis;
       const d = pathLookup[stateKey]!;
       if (d >= 0) queueDirection(maze, movement, d);
     }

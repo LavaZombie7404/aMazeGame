@@ -382,6 +382,12 @@ Java_com_lavazombie_amazegame_CoreBridge_nativePlayerRender(
     return arr;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_lavazombie_amazegame_CoreBridge_nativePlayerDir(
+    JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jlong game) {
+    return call_i_i(mod(handle), "core_player_dir", game32(game));
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_lavazombie_amazegame_CoreBridge_nativePlayerCell(
     JNIEnv* env, jobject /*thiz*/, jlong handle, jlong game) {

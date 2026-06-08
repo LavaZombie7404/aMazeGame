@@ -196,6 +196,15 @@ pub extern "C" fn core_player_cell_y(g: *const Game) -> u32 {
     unsafe { (*g).movement.cell_y }
 }
 
+/// Live travel direction (-1 = idle, 0..3 = N/E/S/W). Used by the
+/// auto-solver to derive the dot's entry axis for the state-space path
+/// lookup without inferring it from cell-coord deltas (which break when
+/// the corridor auto-route crosses multiple cells in one tick).
+#[no_mangle]
+pub extern "C" fn core_player_dir(g: *const Game) -> i32 {
+    unsafe { (*g).movement.dir }
+}
+
 #[no_mangle]
 pub extern "C" fn core_visited_len(g: *const Game) -> u32 {
     unsafe { (*g).movement.visited.len() as u32 }

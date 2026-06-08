@@ -97,6 +97,9 @@ class CoreBridge(private val context: Context) {
     fun playerCell(game: Long): IntArray =
         nativePlayerCell(nativeHandle, game)
 
+    /** -1 if the dot is idle, 0..3 (N/E/S/W) otherwise. */
+    fun playerDir(game: Long): Int = nativePlayerDir(nativeHandle, game)
+
     fun visited(game: Long): IntArray = nativeVisited(nativeHandle, game)
 
     // ---- JNI -----
@@ -122,6 +125,7 @@ class CoreBridge(private val context: Context) {
     private external fun nativeResetPlayer(handle: Long, game: Long)
     private external fun nativePlayerRender(handle: Long, game: Long): FloatArray
     private external fun nativePlayerCell(handle: Long, game: Long): IntArray
+    private external fun nativePlayerDir(handle: Long, game: Long): Int
     private external fun nativeVisited(handle: Long, game: Long): IntArray
 
     companion object {

@@ -30,9 +30,6 @@ class GameRuntime(context: Context) {
     // Wall overlay sealing off-path edges. Only populated for non-weave
     // mazes — weave mazes can't be cleanly captured by a per-cell mask.
     private var pathExtraWalls: ByteArray = ByteArray(0)
-    private var autoLastCellX: Int = -1
-    private var autoLastCellY: Int = -1
-    private var autoLastAxis: Int = 2 // start-state sentinel
 
     private val _state = MutableStateFlow(GameState.EMPTY)
     val state: StateFlow<GameState> = _state
@@ -84,9 +81,6 @@ class GameRuntime(context: Context) {
     fun setAutoMode(value: Boolean) {
         store.autoMode = value
         _player.value = _player.value.copy(autoMode = value)
-        autoLastCellX = -1
-        autoLastCellY = -1
-        autoLastAxis = 2
         applyExtraWalls()
     }
 
@@ -159,9 +153,6 @@ class GameRuntime(context: Context) {
         )
         pathLookup = solution.first
         pathExtraWalls = solution.second
-        autoLastCellX = start[0]
-        autoLastCellY = start[1]
-        autoLastAxis = 2
         applyExtraWalls()
         publish()
     }
@@ -174,24 +165,13 @@ class GameRuntime(context: Context) {
             val cell = bridge.playerCell(gamePtr)
             val cx = cell[0]
             val cy = cell[1]
-            // Re-derive entry axis whenever the dot crosses a cell border.
-            if (cx != autoLastCellX || cy != autoLastCellY) {
-                val dx = cx - autoLastCellX
-                val dy = cy - autoLastCellY
-                val moveDir = when {
-                    dx == 0 && dy == -1 -> 0 // N
-                    dx == 1 && dy == 0 -> 1  // E
-                    dx == 0 && dy == 1 -> 2  // S
-                    dx == -1 && dy == 0 -> 3 // W
-                    else -> -1
-                }
-                if (moveDir >= 0) {
-                    autoLastAxis = if (moveDir == 0 || moveDir == 2) 1 else 0
-                }
-                autoLastCellX = cx
-                autoLastCellY = cy
+            val dir = bridge.playerDir(gamePtr)
+            val axis = when {
+                dir < 0 -> 2          // idle = start state, any direction OK
+                dir == 0 || dir == 2 -> 1 // N/S = vertical
+                else -> 0             // E/W = horizontal
             }
-            val stateKey = (cy * autoSize + cx) * 3 + autoLastAxis
+            val stateKey = (cy * autoSize + cx) * 3 + axis
             val d = pathLookup.getOrNull(stateKey) ?: -1
             if (d >= 0) bridge.queueDirection(gamePtr, d)
         }
