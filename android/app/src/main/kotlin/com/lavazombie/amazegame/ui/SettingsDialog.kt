@@ -56,11 +56,11 @@ private val COLOR_PALETTE = listOf(
 )
 
 private fun speedLabel(v: Float): String = when (v) {
-    1.0f -> "1× (default)"
+    1.0f -> "1x (default)"
     else -> {
-        // Trim trailing ".0" so 2.0 shows as "2×".
+        // Trim trailing ".0" so 2.0 shows as "2x".
         val s = if (v % 1f == 0f) v.toInt().toString() else v.toString()
-        "${s}×"
+        "${s}x"
     }
 }
 
