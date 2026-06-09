@@ -12,8 +12,9 @@ android {
     // CI installs NDK r26d (see .github/workflows/android.yml) and exports its
     // location as ANDROID_NDK_HOME. AGP ignores that env var on its own and
     // would otherwise try to auto-install its bundled default NDK (27.x),
-    // which fails on the GitHub runner. Point AGP at the installed NDK
-    // explicitly. Locally the env is unset, so AGP falls back to its default.
+    // which fails on the GitHub runner. Pin the version to r26d and point AGP
+    // at the installed copy (the two must agree, else AGP errors CXX1100).
+    ndkVersion = "26.3.11579264" // r26d
     System.getenv("ANDROID_NDK_HOME")?.let { ndkPath = it }
 
     defaultConfig {
