@@ -33,6 +33,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -55,9 +57,14 @@ fun MainScreen(game: GameRuntime) {
     val player by game.player.collectAsStateWithLifecycle()
     val needsName = player.name.isNullOrBlank()
     var settingsOpen by remember { mutableStateOf(false) }
+    var infoOpen by remember { mutableStateOf(false) }
 
     if (needsName) {
         NameDialog(onSubmit = { game.setPlayerName(it) })
+    }
+
+    if (infoOpen) {
+        InfoDialog(onDismiss = { infoOpen = false })
     }
 
     if (settingsOpen) {
@@ -91,6 +98,7 @@ fun MainScreen(game: GameRuntime) {
     Box(Modifier.fillMaxSize().background(player.skin.palette.paper)) {
         Column(Modifier.fillMaxSize()) {
             Hud(
+                game = game,
                 playerName = player.name ?: "—",
                 mazesSolved = player.mazesCompleted,
                 currentStreak = player.currentStreak,
@@ -102,6 +110,7 @@ fun MainScreen(game: GameRuntime) {
                     game.loadDailyMaze()
                     Sfx.playWhoosh()
                 },
+                onInfo = { infoOpen = true },
             )
             // The canvas occupies the rest of the screen.
             Box(Modifier.weight(1f)) {
@@ -114,6 +123,7 @@ fun MainScreen(game: GameRuntime) {
 
 @Composable
 private fun Hud(
+    game: GameRuntime,
     playerName: String,
     mazesSolved: Int,
     currentStreak: Int,
@@ -122,6 +132,7 @@ private fun Hud(
     onResetCurrentMaze: () -> Unit,
     onSettings: () -> Unit,
     onDaily: () -> Unit,
+    onInfo: () -> Unit,
 ) {
     Row(
         Modifier
@@ -145,6 +156,13 @@ private fun Hud(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Text(
+                "TIME",
+                color = INK_SOFT.copy(alpha = 0.65f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            TimerText(game)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             HudTextButton(label = "Daily", onClick = onDaily)
@@ -157,36 +175,125 @@ private fun Hud(
             Spacer(Modifier.width(6.dp))
             HudTextButton(label = "Settings", onClick = onSettings)
         }
-        Column(
+        Row(
             Modifier.weight(1f),
-            horizontalAlignment = Alignment.End,
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "MAZES SOLVED",
-                color = INK_SOFT.copy(alpha = 0.65f),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                mazesSolved.toString(),
-                color = INK,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "STREAK",
-                color = INK_SOFT.copy(alpha = 0.65f),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                if (bestStreak > 0) "$currentStreak (best $bestStreak)" else "$currentStreak",
-                color = INK,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "MAZES SOLVED",
+                    color = INK_SOFT.copy(alpha = 0.65f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    mazesSolved.toString(),
+                    color = INK,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "STREAK",
+                    color = INK_SOFT.copy(alpha = 0.65f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    if (bestStreak > 0) "$currentStreak (best $bestStreak)" else "$currentStreak",
+                    color = INK,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            InfoButton(onClick = onInfo)
         }
     }
+}
+
+@Composable
+private fun TimerText(game: GameRuntime) {
+    val state by game.state.collectAsStateWithLifecycle()
+    Text(
+        formatTime(state.elapsedMs),
+        color = INK,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
+}
+
+private fun formatTime(ms: Int): String {
+    val total = ms.coerceAtLeast(0)
+    val m = total / 60000
+    val s = (total % 60000) / 1000
+    val millis = total % 1000
+    return "%d:%02d.%03d".format(m, s, millis)
+}
+
+@Composable
+private fun InfoButton(onClick: () -> Unit) {
+    val shape = CircleShape
+    Box(
+        Modifier
+            .size(38.dp)
+            .clip(shape)
+            .border(BorderStroke(1.5.dp, INK_SOFT), shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("ℹ", color = INK, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun InfoDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Let's go!") }
+        },
+        title = { Text("Maze Explorer") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Welcome to Maze Explorer! Here, you have to navigate through " +
+                        "various different mazes. Get ready, because every day, you " +
+                        "will have to slay the evil, nightmarish and difficult daily " +
+                        "maze. Try getting to absolute INSANE milestones like 100 " +
+                        "mazes, 150 mazes and 200 mazes. We hope you get ready to " +
+                        "destroy tens and tens of randomly generated mazes that no " +
+                        "one has ever seen! With this app, you can become a maze " +
+                        "EXPERT! We wish you good luck on your maze exploring " +
+                        "adventure. So try a couple of mazes, and see if this app " +
+                        "suits your style. So are you ready...?",
+                    color = INK,
+                    fontSize = 15.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "How to play",
+                    color = INK,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Drag your finger around to navigate through the maze. Click " +
+                        "reset to generate another maze and hold reset to reset to " +
+                        "the current maze. Click daily to try the daily maze. Click " +
+                        "settings to change the settings of the game and choose " +
+                        "skins, players and both locations. Weave mazes allows you " +
+                        "to go in the same point from both directions. On the big " +
+                        "daily maze, pinch to zoom and drag with two fingers to move " +
+                        "around. For other things, explore and you'll see how this " +
+                        "game works. Once again, good luck!",
+                    color = INK,
+                    fontSize = 15.sp,
+                )
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

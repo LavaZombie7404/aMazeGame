@@ -31,6 +31,10 @@ class GameRuntime(context: Context) {
     // mazes — weave mazes can't be cleanly captured by a per-cell mask.
     private var pathExtraWalls: ByteArray = ByteArray(0)
 
+    // Wall-clock milliseconds spent on the current maze. Reset on every new
+    // maze, accumulated each tick, surfaced in GameState for the HUD timer.
+    private var elapsedMs: Int = 0
+
     private val _state = MutableStateFlow(GameState.EMPTY)
     val state: StateFlow<GameState> = _state
 
@@ -117,6 +121,7 @@ class GameRuntime(context: Context) {
         if (gamePtr == 0L) return
         store.currentStreak = 0
         _player.value = _player.value.copy(currentStreak = 0)
+        elapsedMs = 0
         bridge.resetPlayer(gamePtr)
         bridge.setLegacyMovement(gamePtr, _player.value.legacyMovement)
         applyExtraWalls()
@@ -132,10 +137,13 @@ class GameRuntime(context: Context) {
         val seed = cal.get(java.util.Calendar.YEAR) * 10000 +
             (cal.get(java.util.Calendar.MONTH) + 1) * 100 +
             cal.get(java.util.Calendar.DAY_OF_MONTH)
-        nextRound(size = 15, seed = seed)
+        // Big 50×50 daily — loads zoomed in on the start; pinch/drag to
+        // explore (see MazeCanvas camera). Matches the web's DAILY_SIZE.
+        nextRound(size = 50, seed = seed)
     }
 
     fun nextRound(size: Int, seed: Int = Random.nextInt()) {
+        elapsedMs = 0
         if (gamePtr != 0L) bridge.gameDrop(gamePtr)
         gamePtr = bridge.gameNewExt(size, seed, _player.value.weaveMazes)
         // Per-game flag — re-apply on each new round.
@@ -158,6 +166,7 @@ class GameRuntime(context: Context) {
     }
 
     fun tick(dtMs: Int): Boolean {
+        elapsedMs += dtMs
         // Auto-solver: look up the precomputed direction for the dot's
         // current (cell, entry-axis) state. queue_direction is idempotent on
         // a same-direction call so re-queueing every tick is cheap.
@@ -315,6 +324,7 @@ class GameRuntime(context: Context) {
             playerY = player[1],
             visitedCells = bridge.visited(gamePtr),
             hashHex = bridge.mazeHash(gamePtr).toHex(),
+            elapsedMs = elapsedMs,
         )
     }
 
@@ -413,6 +423,7 @@ data class GameState(
     val playerY: Float,
     val visitedCells: IntArray,
     val hashHex: String,
+    val elapsedMs: Int = 0,
 ) {
     companion object {
         val EMPTY = GameState(
@@ -422,6 +433,7 @@ data class GameState(
             playerX = 0f, playerY = 0f,
             visitedCells = IntArray(0),
             hashHex = "",
+            elapsedMs = 0,
         )
     }
 }
