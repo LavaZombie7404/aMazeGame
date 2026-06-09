@@ -63,6 +63,11 @@ body {
   color: var(--ink);
 }
 
+/* Tabular figures keep the running timer from jittering as digits change. */
+#timer {
+  font-variant-numeric: tabular-nums;
+}
+
 .hud-label {
   display: block;
   font-size: 0.75rem;

@@ -1,4 +1,5 @@
 import { mulberry32 } from "./rng";
+import { sha256Hex } from "./sha256";
 
 // A cell stores which of its 4 walls are present. The grid is `size` × `size`.
 // 0 = N, 1 = E, 2 = S, 3 = W.
@@ -189,8 +190,16 @@ export async function hashMaze(maze: Maze): Promise<string> {
   const buf = new Uint8Array(header.length + maze.walls.length);
   buf.set(header, 0);
   buf.set(maze.walls, header.length);
-  const digest = await crypto.subtle.digest("SHA-256", buf);
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  // `crypto.subtle` only exists in a secure context (HTTPS or localhost). When
+  // the page is served over plain HTTP — e.g. a phone hitting the LAN dev
+  // server by IP — it's undefined, so fall back to the JS SHA-256, which
+  // returns the same digest. Without this every maze throws and the board
+  // never renders.
+  if (globalThis.crypto?.subtle) {
+    const digest = await crypto.subtle.digest("SHA-256", buf);
+    return [...new Uint8Array(digest)]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+  return sha256Hex(buf);
 }

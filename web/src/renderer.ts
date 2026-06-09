@@ -35,25 +35,175 @@ export interface RenderState {
  */
 export const MAX_CELLS_ON_SCREEN = 17;
 
-export function fitMetrics(
-  canvas: HTMLCanvasElement,
-  size: number,
-): ViewMetrics {
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+/**
+ * The camera over the maze: how much we're zoomed in (`scale`, multiplying the
+ * base notebook-square size) and where the board's top-left sits on the canvas
+ * (`offsetX/Y`, in CSS px). At `scale = 1` a cell is exactly one notebook
+ * square (`baseCellSize`), preserving the original look for mazes that fit. Big
+ * mazes (e.g. the 50×50 daily) start zoomed out so the whole board is visible,
+ * and the player pans/zooms from there.
+ */
+export interface Camera {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+/** Zoom-in ceiling. Lower bound is "whole maze fits" — derived per maze. */
+const MAX_SCALE = 4;
+
+/**
+ * The notebook-square size: screen_min / 17, independent of maze N. This is the
+ * cell size at scale 1; the grid background is drawn at this pitch too.
+ */
+export function baseCellSize(canvas: HTMLCanvasElement): number {
   const rect = canvas.getBoundingClientRect();
-  // Cell size is the same regardless of maze N: it's screen_min / 17.
-  // Small mazes get a smaller board inside a bigger canvas; the grid behind
-  // is drawn across the full canvas so the player still sees notebook paper.
-  const cell = Math.max(
+  return Math.max(
     8,
     Math.floor((Math.min(rect.width, rect.height) - 16) / MAX_CELLS_ON_SCREEN),
   );
-  const board = cell * size;
-  const offsetX = (rect.width - board) / 2;
-  const offsetY = (rect.height - board) / 2;
+}
+
+/**
+ * Smallest scale we allow: the one at which the whole board just fits the
+ * canvas. For mazes ≤ 17 cells this is clamped to 1 so they keep the original
+ * letter-boxed notebook look instead of zooming to fill the screen.
+ */
+function minScaleFor(size: number): number {
+  return Math.min(1, MAX_CELLS_ON_SCREEN / size);
+}
+
+/**
+ * Default camera for a freshly loaded maze. Always starts at scale 1 (one
+ * notebook square per cell), so a maze looks the same whether it's small or
+ * huge. A maze that fits ends up centered (clamp does that); a big one (the
+ * 50×50 daily) is centered on its start cell, showing the region the player
+ * begins in — they pan/zoom out from there rather than facing a tiny shrunk
+ * board. Drawing only the on-screen cells (see `visibleRange`) keeps this fast
+ * regardless of total maze size.
+ */
+export function defaultCamera(
+  canvas: HTMLCanvasElement,
+  size: number,
+  focusX: number,
+  focusY: number,
+): Camera {
+  const rect = canvas.getBoundingClientRect();
+  const cell = baseCellSize(canvas); // scale 1
+  const cam: Camera = {
+    scale: 1,
+    offsetX: rect.width / 2 - (focusX + 0.5) * cell,
+    offsetY: rect.height / 2 - (focusY + 0.5) * cell,
+  };
+  clampCamera(cam, canvas, size);
+  return cam;
+}
+
+/**
+ * The inclusive cell-index window currently visible on screen, padded by one
+ * cell so walls shared with just-off-screen neighbours still render. Drawing
+ * code loops over this instead of the whole maze, so a 50×50 costs the same as
+ * a 17×17 at the same zoom.
+ */
+export function visibleRange(
+  m: ViewMetrics,
+  size: number,
+): { c0: number; c1: number; r0: number; r1: number } {
+  return {
+    c0: Math.max(0, Math.floor(-m.offsetX / m.cell) - 1),
+    c1: Math.min(size - 1, Math.floor((m.width - m.offsetX) / m.cell) + 1),
+    r0: Math.max(0, Math.floor(-m.offsetY / m.cell) - 1),
+    r1: Math.min(size - 1, Math.floor((m.height - m.offsetY) / m.cell) + 1),
+  };
+}
+
+/**
+ * Keep the camera legal in place: clamp the zoom to [fit, MAX_SCALE], then keep
+ * the board from being dragged off-screen. On an axis where the board is
+ * smaller than the canvas it's centered (and can't be panned); otherwise the
+ * offset is clamped so an edge can't be pulled inside the viewport.
+ */
+export function clampCamera(
+  cam: Camera,
+  canvas: HTMLCanvasElement,
+  size: number,
+): void {
+  const rect = canvas.getBoundingClientRect();
+  cam.scale = Math.min(MAX_SCALE, Math.max(minScaleFor(size), cam.scale));
+  const board = baseCellSize(canvas) * cam.scale * size;
+  cam.offsetX =
+    board <= rect.width
+      ? (rect.width - board) / 2
+      : Math.min(0, Math.max(rect.width - board, cam.offsetX));
+  cam.offsetY =
+    board <= rect.height
+      ? (rect.height - board) / 2
+      : Math.min(0, Math.max(rect.height - board, cam.offsetY));
+}
+
+/**
+ * Build the per-frame view metrics from the current camera. Does NOT resize the
+ * canvas backing store — that's `syncBackingStore`, called only on real resize
+ * (writing canvas.width every frame would needlessly clear + reallocate).
+ */
+export function metricsFor(
+  canvas: HTMLCanvasElement,
+  cam: Camera,
+): ViewMetrics {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const rect = canvas.getBoundingClientRect();
+  return {
+    cell: baseCellSize(canvas) * cam.scale,
+    offsetX: cam.offsetX,
+    offsetY: cam.offsetY,
+    width: rect.width,
+    height: rect.height,
+    dpr,
+  };
+}
+
+/**
+ * Zoom by `factor` while keeping the world point under (cx, cy) — the cursor or
+ * pinch midpoint, in CSS px — pinned to that screen position. Clamps afterward.
+ */
+export function zoomCamera(
+  cam: Camera,
+  canvas: HTMLCanvasElement,
+  size: number,
+  factor: number,
+  cx: number,
+  cy: number,
+): void {
+  const base = baseCellSize(canvas);
+  const oldCell = base * cam.scale;
+  const worldX = (cx - cam.offsetX) / oldCell;
+  const worldY = (cy - cam.offsetY) / oldCell;
+  cam.scale = Math.min(MAX_SCALE, Math.max(minScaleFor(size), cam.scale * factor));
+  const newCell = base * cam.scale;
+  cam.offsetX = cx - worldX * newCell;
+  cam.offsetY = cy - worldY * newCell;
+  clampCamera(cam, canvas, size);
+}
+
+/** Pan by a screen-space delta (CSS px), then clamp back into bounds. */
+export function panCamera(
+  cam: Camera,
+  canvas: HTMLCanvasElement,
+  size: number,
+  dx: number,
+  dy: number,
+): void {
+  cam.offsetX += dx;
+  cam.offsetY += dy;
+  clampCamera(cam, canvas, size);
+}
+
+/** Match the canvas backing store to its CSS box. Call on resize only. */
+export function syncBackingStore(canvas: HTMLCanvasElement): void {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const rect = canvas.getBoundingClientRect();
   canvas.width = Math.round(rect.width * dpr);
   canvas.height = Math.round(rect.height * dpr);
-  return { cell, offsetX, offsetY, width: rect.width, height: rect.height, dpr };
 }
 
 function cellCenter(m: ViewMetrics, x: number, y: number): [number, number] {
@@ -67,12 +217,20 @@ function drawWalls(
   skin: Skin,
   tMs: number,
 ) {
-  // Seed wobble from the maze so the same maze always looks the same.
-  const rand = mulberry32(maze.seed ^ 0x9e3779b9);
-  for (let y = 0; y < maze.size; y++) {
-    for (let x = 0; x < maze.size; x++) {
+  // Seed the wobble *per cell* (from the maze seed + cell index) rather than
+  // from one running stream. With viewport culling the set of drawn cells
+  // changes as you pan, so a single shared `rand` would give each wall a
+  // different wobble every frame (shimmer). Per-cell seeding makes each wall's
+  // look depend only on its position — stable while panning, same maze same
+  // look.
+  const { c0, c1, r0, r1 } = visibleRange(m, maze.size);
+  for (let y = r0; y <= r1; y++) {
+    for (let x = c0; x <= c1; x++) {
       const px = m.offsetX + x * m.cell;
       const py = m.offsetY + y * m.cell;
+      const rand = mulberry32(
+        (maze.seed ^ (cellIndex(maze.size, x, y) * 0x9e3779b9)) >>> 0,
+      );
       if (hasWall(maze, x, y, N)) {
         skin.drawWall(ctx, px, py, px + m.cell, py, rand, tMs);
       }
@@ -105,8 +263,9 @@ function drawBridges(
   ctx.lineWidth = Math.max(1.4, m.cell * 0.06);
   ctx.lineCap = "round";
   ctx.globalAlpha = 0.45;
-  for (let y = 0; y < maze.size; y++) {
-    for (let x = 0; x < maze.size; x++) {
+  const { c0, c1, r0, r1 } = visibleRange(m, maze.size);
+  for (let y = r0; y <= r1; y++) {
+    for (let x = c0; x <= c1; x++) {
       if (!isBridge(maze, x, y)) continue;
       const cx = m.offsetX + (x + 0.5) * m.cell;
       const cy = m.offsetY + (y + 0.5) * m.cell;
@@ -163,8 +322,9 @@ function drawTrail(
   ctx.globalAlpha = trail.alpha ?? 1;
   applyTrailDash(ctx, trail);
 
-  for (let y = 0; y < maze.size; y++) {
-    for (let x = 0; x < maze.size; x++) {
+  const { c0, c1, r0, r1 } = visibleRange(m, maze.size);
+  for (let y = r0; y <= r1; y++) {
+    for (let x = c0; x <= c1; x++) {
       const here = cellIndex(maze.size, x, y);
       if (!visited.has(here)) continue;
       // Look East and South only so each edge is drawn at most once.

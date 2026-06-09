@@ -126,6 +126,14 @@ To keep the game from grinding the player down with a streak of huge mazes, size
 
 A round's bucket overrides any single-round "random size" intuition — the randomness is *within* the bucket, not across both.
 
+### 6.0.1 The daily maze & the camera
+
+- The **daily maze** (★ button) is a fixed **50×50** — roughly 4× the cells of a regular maze — seeded from the UTC date so everyone gets the same one. `DAILY_SIZE` in `main.ts`. **[done]**
+- A 50×50 board does not fit at one-notebook-square-per-cell, so the renderer now has a **camera** (`Camera` in `renderer.ts`: `scale` + `offsetX/Y`). Every maze loads at scale 1 (notebook squares): one that fits ends up centered, a big one is centered on its **start cell** so the player sees where they begin and pans/zooms out from there. Mazes ≤ 17 cells look exactly as before. **[done]**
+- The player can **zoom and pan** to explore: pinch / mouse-wheel zooms toward the focal point, two-finger-drag / left-mouse-drag pans. One-finger swipe is reserved for steering, so touch panning is two-finger (`attachCamera` in `input.ts`). Zoom is clamped to [whole-maze-fits, 4×]; pan can't pull a board edge inside the viewport. **[done]**
+- **Viewport culling:** the renderer only draws cells inside the visible window (`visibleRange`), so a 50×50 costs the same per frame as a 17×17 at the same zoom. Wall wobble is seeded per cell (not from one running stream) so it stays stable while panning. **[done]**
+- Timing: the HUD shows a live **mm:ss.mmm** timer per maze (`#timer`), running until the goal is reached and reset on each new maze. **[done]**
+
 ### 6.1 Movement
 
 - The character moves **autonomously** in its current direction. **[done]**

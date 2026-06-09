@@ -67,6 +67,8 @@ Where to put what:
 
 ### Lesson log (one-liners, link out for detail)
 
+- **Blank maze when testing the phone over the LAN dev server (HTTP by IP).** `crypto.subtle` is `undefined` outside a secure context (HTTPS or `localhost`), so `hashMaze`'s SHA-256 threw and *every* maze failed to generate → blank page. Production (GitHub Pages, HTTPS) is fine; only `http://<lan-ip>:5173` breaks. Fix: pure-JS SHA-256 fallback in `web/src/sha256.ts`, used by `hashMaze` when `crypto.subtle` is missing — byte-identical digest, so dedup hashes are unchanged. `crypto.getRandomValues` (rng.ts) is *not* secure-context-gated, so it was fine. When something works at `localhost` but blanks on the phone-by-IP, suspect a secure-context-only API first.
+
 - **Canvas runaway-growth on the phone** — `#maze` had no CSS width; `fitMetrics` writing the backing-store size leaked back into CSS layout and OOM'd the tab after a few frames. Fix: pin the canvas to `position:absolute; inset:0; width:100%; height:100%`. Reach for this pattern any time something works on desktop Chrome but breaks on the phone. See `docs/android-debug.md` §6.
 - **Phone Chrome DevTools socket isn't bound until there's a foreground tab.** `curl http://localhost:9222/json/version` returns nothing if no tab is open. Open any tab first. See `docs/android-debug.md` §5.
 - **sql.js dev import** — Vite dev served the pre-built browser entry which has no default ESM export. Fix: `optimizeDeps.include: ["sql.js"]` (not `exclude`). Commit `ced3fee`.

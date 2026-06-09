@@ -12,12 +12,18 @@ import {
 } from "./maze";
 import { playGoalChime, playWhoosh } from "./sfx";
 import {
-  fitMetrics,
+  type Camera,
+  clampCamera,
+  defaultCamera,
+  metricsFor,
+  panCamera,
   render,
   type ShapeOverrides,
+  syncBackingStore,
   type ViewMetrics,
+  zoomCamera,
 } from "./renderer";
-import { attachSwipe } from "./input";
+import { attachCamera, attachSwipe } from "./input";
 import {
   createMovementState,
   DIR_FROM_NAME,
@@ -62,6 +68,7 @@ const canvas = document.getElementById("maze") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
 const scoreEl = document.getElementById("score")!;
 const streakEl = document.getElementById("streak")!;
+const timerEl = document.getElementById("timer")!;
 const nameEl = document.getElementById("player-name")!;
 const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
 const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
@@ -115,12 +122,35 @@ const SPEED_OPTIONS = [0.5, 0.75, 1, 1.5, 2, 3] as const;
 let maze: Maze;
 let movement: MovementState;
 let metrics: ViewMetrics;
+let camera: Camera = { scale: 1, offsetX: 0, offsetY: 0 };
 let skin: Skin;
 let overrides: ShapeOverrides = { character: null, start: null, goal: null };
 let legacyMovement = false;
 let speedMultiplier = 1;
 let autoMode = false;
 let weaveMazes = false;
+/**
+ * When the current maze started, on the `performance.now()` clock (the same
+ * one `requestAnimationFrame` hands the frame). null before the first maze.
+ * The timer keeps ticking until `completing` flips true, then freezes on the
+ * final time until the next maze resets it.
+ */
+let mazeStartTime: number | null = null;
+
+/** Format elapsed milliseconds as M:SS.mmm — minutes, seconds, milliseconds. */
+function formatTime(ms: number): string {
+  const totalMs = Math.max(0, Math.floor(ms));
+  const minutes = Math.floor(totalMs / 60000);
+  const seconds = Math.floor((totalMs % 60000) / 1000);
+  const millis = totalMs % 1000;
+  return `${minutes}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
+}
+
+/** Start the maze clock fresh and show 0:00.000 immediately. */
+function startTimer() {
+  mazeStartTime = performance.now();
+  timerEl.textContent = formatTime(0);
+}
 /**
  * Precomputed shortest-path solution keyed by (cell, entry-axis). Indexed
  * as `cellIdx * 3 + axis`, where axis ∈ {0 = horizontal (entered via E/W),
@@ -180,11 +210,16 @@ async function nextRound(player: PlayerRecord) {
   maze = await generateUniqueMaze(bucket);
   movement = createMovementState(maze);
   resetAutoCache();
-  resize();
+  loadView();
+  startTimer();
 }
 
-/** Today's daily maze size — fixed so everyone solves the same N×N maze. */
-const DAILY_SIZE = 15;
+/**
+ * Today's daily maze size — fixed so everyone solves the same N×N maze. It's a
+ * big 50×50 (≈4× the cells of a regular maze), so it loads zoomed-to-fit and
+ * the player pinch-zooms / drags to explore it. See loadView() and attachCamera.
+ */
+const DAILY_SIZE = 50;
 
 /**
  * Today's UTC date as an integer seed (YYYYMMDD). Same on every device, so
@@ -199,7 +234,8 @@ async function loadDailyMaze() {
   maze = generateMaze(DAILY_SIZE, dailySeed());
   movement = createMovementState(maze);
   resetAutoCache();
-  resize();
+  loadView();
+  startTimer();
 }
 
 /**
@@ -213,13 +249,30 @@ async function resetCurrentMaze() {
   movement = createMovementState(maze);
   resetAutoCache();
   applyAutoExtraWalls();
+  loadView();
+  startTimer();
   const p = await getPlayer();
   if (p) refreshHud(p);
 }
 
+/**
+ * A freshly loaded maze: size the backing store and reset the camera to the
+ * fit-and-centered default (small mazes look exactly as before; the 50×50 daily
+ * starts zoomed out so the whole board is visible).
+ */
+function loadView() {
+  if (!maze) return;
+  syncBackingStore(canvas);
+  camera = defaultCamera(canvas, maze.size, maze.start.x, maze.start.y);
+  metrics = metricsFor(canvas, camera);
+}
+
+/** Window resize / orientation change: keep the player's zoom, re-clamp bounds. */
 function resize() {
   if (!maze) return;
-  metrics = fitMetrics(canvas, maze.size);
+  syncBackingStore(canvas);
+  clampCamera(camera, canvas, maze.size);
+  metrics = metricsFor(canvas, camera);
 }
 
 async function ensurePlayerName(): Promise<PlayerRecord> {
@@ -529,6 +582,9 @@ function frame(now: number) {
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   if (maze && movement && metrics && !completing) {
+    if (mazeStartTime !== null) {
+      timerEl.textContent = formatTime(now - mazeStartTime);
+    }
     if (autoMode) {
       if (pathLookup.length === 0) {
         const sol = computePathSolution(maze, weaveMazes);
@@ -603,6 +659,21 @@ async function boot() {
     onSwipe: (d) => {
       if (!maze || !movement) return;
       queueDirection(maze, movement, DIR_FROM_NAME[d]);
+    },
+  });
+
+  // Pinch / wheel to zoom, two-finger or left-drag to pan — for exploring the
+  // big daily maze. Recompute metrics in place so the next frame reflects it.
+  attachCamera(document.body, {
+    onZoom: (factor, cx, cy) => {
+      if (!maze) return;
+      zoomCamera(camera, canvas, maze.size, factor, cx, cy);
+      metrics = metricsFor(canvas, camera);
+    },
+    onPan: (dx, dy) => {
+      if (!maze) return;
+      panCamera(camera, canvas, maze.size, dx, dy);
+      metrics = metricsFor(canvas, camera);
     },
   });
 
