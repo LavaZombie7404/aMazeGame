@@ -9,6 +9,13 @@ android {
     namespace = "com.lavazombie.amazegame"
     compileSdk = 35
 
+    // CI installs NDK r26d (see .github/workflows/android.yml) and exports its
+    // location as ANDROID_NDK_HOME. AGP ignores that env var on its own and
+    // would otherwise try to auto-install its bundled default NDK (27.x),
+    // which fails on the GitHub runner. Point AGP at the installed NDK
+    // explicitly. Locally the env is unset, so AGP falls back to its default.
+    System.getenv("ANDROID_NDK_HOME")?.let { ndkPath = it }
+
     defaultConfig {
         applicationId = "com.lavazombie.amazegame"
         minSdk = 26 // Android 8.0 — covers ~99% of in-use devices
