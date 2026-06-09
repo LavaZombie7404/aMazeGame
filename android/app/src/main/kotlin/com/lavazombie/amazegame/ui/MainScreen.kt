@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -174,40 +173,37 @@ private fun Hud(
             )
             Spacer(Modifier.width(6.dp))
             HudTextButton(label = "Settings", onClick = onSettings)
+            Spacer(Modifier.width(6.dp))
+            HudTextButton(label = "Info", onClick = onInfo)
         }
-        Row(
+        Column(
             Modifier.weight(1f),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalAlignment = Alignment.End,
         ) {
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    "MAZES SOLVED",
-                    color = INK_SOFT.copy(alpha = 0.65f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    mazesSolved.toString(),
-                    color = INK,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "STREAK",
-                    color = INK_SOFT.copy(alpha = 0.65f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    if (bestStreak > 0) "$currentStreak (best $bestStreak)" else "$currentStreak",
-                    color = INK,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            InfoButton(onClick = onInfo)
+            Text(
+                "MAZES SOLVED",
+                color = INK_SOFT.copy(alpha = 0.65f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                mazesSolved.toString(),
+                color = INK,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "STREAK",
+                color = INK_SOFT.copy(alpha = 0.65f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                if (bestStreak > 0) "$currentStreak (best $bestStreak)" else "$currentStreak",
+                color = INK,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
@@ -229,21 +225,6 @@ private fun formatTime(ms: Int): String {
     val s = (total % 60000) / 1000
     val millis = total % 1000
     return "%d:%02d.%03d".format(m, s, millis)
-}
-
-@Composable
-private fun InfoButton(onClick: () -> Unit) {
-    val shape = CircleShape
-    Box(
-        Modifier
-            .size(38.dp)
-            .clip(shape)
-            .border(BorderStroke(1.5.dp, INK_SOFT), shape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("ℹ", color = INK, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-    }
 }
 
 @Composable
