@@ -73,6 +73,8 @@ const nameEl = document.getElementById("player-name")!;
 const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
 const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
 const dailyBtn = document.getElementById("daily-btn") as HTMLButtonElement;
+const infoBtn = document.getElementById("info-btn") as HTMLButtonElement;
+const infoDialog = document.getElementById("info-dialog") as HTMLDialogElement;
 const nameDialog = document.getElementById("name-dialog") as HTMLDialogElement;
 const nameInput = document.getElementById("name-input") as HTMLInputElement;
 const settingsDialog = document.getElementById(
@@ -715,6 +717,10 @@ async function boot() {
   dailyBtn.addEventListener("click", async () => {
     await loadDailyMaze();
     playWhoosh();
+  });
+
+  infoBtn.addEventListener("click", () => {
+    infoDialog.showModal();
   });
 
   settingsBtn.addEventListener("click", async () => {
